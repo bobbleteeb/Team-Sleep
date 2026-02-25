@@ -1,5 +1,12 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+![GitHub stars](https://img.shields.io/github/stars/bobbleteeb/Team-Sleep?style=social)
+![GitHub forks](https://img.shields.io/github/forks/bobbleteeb/Team-Sleep?style=social)
+![GitHub issues](https://img.shields.io/github/issues/bobbleteeb/Team-Sleep)
+![Next.js](https://img.shields.io/badge/Next.js-16.1-black?logo=next.js)
+![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue?logo=typescript)
+![Tailwind CSS](https://img.shields.io/badge/Tailwind-CSS-38bdf8?logo=tailwind-css)
+
 ## Team Sleep Project
 
 This is Team Sleep's main application built with Next.js, TypeScript, and Tailwind CSS.

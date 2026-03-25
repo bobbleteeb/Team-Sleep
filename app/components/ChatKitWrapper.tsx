@@ -40,7 +40,15 @@ type ChatResponse = {
   action?: OrderAction;
 };
 
-export default function ChatKitWrapper({ children }: { children: React.ReactNode }) {
+interface ChatKitWrapperProps {
+  children: React.ReactNode;
+  onAIResponse?: (data: any) => void;
+}
+
+export default function ChatKitWrapper({
+  children,
+  onAIResponse,
+}: ChatKitWrapperProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -130,6 +138,22 @@ export default function ChatKitWrapper({ children }: { children: React.ReactNode
 
       const data: ChatResponse = await response.json();
       const { reply, action } = data;
+
+      if (action && onAIResponse) {
+        onAIResponse(action);
+      }
+
+      // FALLBACK: try parsing reply
+      else {
+        try {
+          const parsed = JSON.parse(reply);
+          if (onAIResponse) {
+            onAIResponse(parsed);
+          }
+        } catch (e) {
+          // normal text → ignore
+        }
+      }
 
       // Handle actions from the chat
       if (action) {

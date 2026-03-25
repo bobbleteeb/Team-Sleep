@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { runOpenAIChat } from "../../lib/openai";
 
 interface MenuItem {
   id: number;
@@ -20,16 +21,6 @@ interface Restaurant {
 }
 
 export async function POST(request: Request) {
-  const apiKey = process.env.OPENAI_API_KEY;
-  const model = process.env.OPENAI_MODEL ?? "gpt-4";
-
-  if (!apiKey) {
-    return NextResponse.json(
-      { error: "Missing OPENAI_API_KEY in environment." },
-      { status: 500 }
-    );
-  }
-
   const body = (await request.json()) as {
     message?: string;
     menuData?: Restaurant[];
@@ -80,49 +71,25 @@ ${menuContext}
 Current Cart: ${cartSummary}`;
 
   try {
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model,
-        messages: [
-          {
-            role: "system",
-            content: systemPrompt,
-          },
-          ...(body.messages || []).map((m) => ({
-            role: m.role as "user" | "assistant",
-            content: m.content,
-          })),
-          {
-            role: "user",
-            content: message,
-          },
-        ],
-        temperature: 0.7,
-        max_tokens: 300,
-      }),
+    const reply = await runOpenAIChat({
+      modelFallback: "gpt-4",
+      temperature: 0.7,
+      maxTokens: 300,
+      messages: [
+        {
+          role: "system",
+          content: systemPrompt,
+        },
+        ...(body.messages || []).map((m) => ({
+          role: m.role as "user" | "assistant",
+          content: m.content,
+        })),
+        {
+          role: "user",
+          content: message,
+        },
+      ],
     });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("OpenAI error:", errorText);
-      return NextResponse.json(
-        { error: "AI request failed.", details: errorText },
-        { status: 500 }
-      );
-    }
-
-    const result = (await response.json()) as {
-      choices?: Array<{ message?: { content?: string } }>;
-    };
-
-    const reply =
-      result.choices?.[0]?.message?.content?.trim() ||
-      "I couldn't generate a response.";
 
     // Try to extract JSON action from response
     let action = null;

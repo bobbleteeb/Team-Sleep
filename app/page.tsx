@@ -5,19 +5,20 @@ import { useMemo, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import ChatKitWrapper from "./components/ChatKitWrapper";
 import DriverDashboard from "./components/DriverDashboard";
+import OrderMessagePanel from "./components/OrderMessagePanel";
 import { useCart } from "./context/CartContext";
 import { useAuth } from "./context/AuthContext";
 import { getUserLocation } from "./lib/geolocation";
 
 interface MenuItem {
-  id: number;
+  id: string;
   name: string;
   price: number;
   image: string;
 }
 
 interface Restaurant {
-  id: number;
+  id: string;
   name: string;
   cuisine?: string;
   latitude: number;
@@ -39,7 +40,7 @@ const formatCurrency = (value: number) =>
 export default function Home() {
   const { user, logout, isLoading: authLoading } = useAuth();
   const router = useRouter();
-  const [selectedRestaurantId, setSelectedRestaurantId] = useState<number | null>(
+  const [selectedRestaurantId, setSelectedRestaurantId] = useState<string | null>(
     null
   );
   const [deliveryAddress, setDeliveryAddress] = useState("");
@@ -49,6 +50,10 @@ export default function Home() {
   const [loadingMenu, setLoadingMenu] = useState(false);
   const [loadingRestaurants, setLoadingRestaurants] = useState(true);
   const [locationError, setLocationError] = useState<string | null>(null);
+  const [orders, setOrders] = useState<
+    Array<{ id: string; status: string; created_at?: string; driver_id?: string | null }>
+  >([]);
+  const [loadingOrders, setLoadingOrders] = useState(false);
   const {
     items,
     addItem,
@@ -64,70 +69,72 @@ export default function Home() {
     restaurantId,
   } = useCart();
 
+  const fetchRestaurants = async () => {
+    try {
+      setLoadingRestaurants(true);
+      const location = await getUserLocation();
+
+      const response = await fetch(
+        `/api/restaurants/nearby?latitude=${location.latitude}&longitude=${location.longitude}`
+      );
+
+      if (!response.ok) throw new Error("Failed to fetch restaurants");
+
+      const data = await response.json();
+
+      // Transform API data to our Restaurant format
+      interface OSMRestaurant {
+        id: string | number;
+        name: string;
+        cuisine?: string;
+        latitude: number;
+        longitude: number;
+        address?: string;
+        phone?: string;
+        website?: string;
+        menu?: Array<{ id: string | number; name: string; price: number; image: string }>;
+        deliveryFee?: number;
+        eta?: string;
+        image?: string;
+      }
+      const transformedRestaurants: Restaurant[] = data.map(
+        (r: OSMRestaurant, idx: number) => {
+          return {
+            id: String(r.id),
+            name: r.name,
+            cuisine: r.cuisine || "Restaurant",
+            latitude: r.latitude,
+            longitude: r.longitude,
+            address: r.address,
+            phone: r.phone,
+            website: r.website,
+            menu: Array.isArray(r.menu)
+              ? r.menu.map((m) => ({ ...m, id: String(m.id) }))
+              : [],
+            deliveryFee: r.deliveryFee ?? 3.99 + (idx % 3) * 0.5,
+            eta: r.eta ?? `${20 + (idx % 15)} mins`,
+            image: r.image || `https://picsum.photos/seed/restaurant-${idx + 1}/900/400`,
+          };
+        }
+      );
+
+      setRestaurants(transformedRestaurants);
+      if (transformedRestaurants.length > 0) {
+        setSelectedRestaurantId(transformedRestaurants[0].id);
+      }
+      setLocationError(null);
+    } catch (error) {
+      console.error("Error fetching restaurants:", error);
+      setLocationError(
+        "Could not load restaurants. Please check your location and try again."
+      );
+    } finally {
+      setLoadingRestaurants(false);
+    }
+  };
+
   // Fetch nearby restaurants on mount
   useEffect(() => {
-    const fetchRestaurants = async () => {
-      try {
-        setLoadingRestaurants(true);
-        const location = await getUserLocation();
-
-        const response = await fetch(
-          `/api/restaurants/nearby?latitude=${location.latitude}&longitude=${location.longitude}`
-        );
-
-        if (!response.ok) throw new Error("Failed to fetch restaurants");
-
-        const data = await response.json();
-
-        // Transform API data to our Restaurant format
-        interface OSMRestaurant {
-          id: number;
-          name: string;
-          cuisine?: string;
-          latitude: number;
-          longitude: number;
-          address?: string;
-          phone?: string;
-          website?: string;
-          menu?: MenuItem[];
-          deliveryFee?: number;
-          eta?: string;
-          image?: string;
-        }
-        const transformedRestaurants: Restaurant[] = data.map(
-          (r: OSMRestaurant, idx: number) => {
-            return {
-              id: r.id,
-              name: r.name,
-              cuisine: r.cuisine || "Restaurant",
-              latitude: r.latitude,
-              longitude: r.longitude,
-              address: r.address,
-              phone: r.phone,
-              website: r.website,
-              menu: Array.isArray(r.menu) ? r.menu : [],
-              deliveryFee: r.deliveryFee ?? 3.99 + (idx % 3) * 0.5,
-              eta: r.eta ?? `${20 + (idx % 15)} mins`,
-              image: r.image || `https://picsum.photos/seed/restaurant-${idx + 1}/900/400`,
-            };
-          }
-        );
-
-        setRestaurants(transformedRestaurants);
-        if (transformedRestaurants.length > 0) {
-          setSelectedRestaurantId(transformedRestaurants[0].id);
-        }
-        setLocationError(null);
-      } catch (error) {
-        console.error("Error fetching restaurants:", error);
-        setLocationError(
-          "Could not load restaurants. Please check your location and try again."
-        );
-      } finally {
-        setLoadingRestaurants(false);
-      }
-    };
-
     fetchRestaurants();
   }, []);
 
@@ -146,8 +153,15 @@ export default function Home() {
 
         if (!response.ok) throw new Error("Failed to fetch menu");
 
-        const data = (await response.json()) as MenuItem[];
-        setSelectedMenu(Array.isArray(data) ? data : []);
+        const data = (await response.json()) as Array<{
+          id: string | number;
+          name: string;
+          price: number;
+          image: string;
+        }>;
+        setSelectedMenu(
+          Array.isArray(data) ? data.map((item) => ({ ...item, id: String(item.id) })) : []
+        );
       } catch (error) {
         console.error("Error fetching menu:", error);
         const fallbackRestaurant = restaurants.find(
@@ -162,6 +176,25 @@ export default function Home() {
     fetchSelectedMenu();
   }, [selectedRestaurantId, restaurants]);
 
+  useEffect(() => {
+    const fetchMyOrders = async () => {
+      if (!user) return;
+      try {
+        setLoadingOrders(true);
+        const response = await fetch(`/api/orders?userId=${encodeURIComponent(user.id)}`);
+        if (!response.ok) return;
+        const data = (await response.json()) as {
+          orders?: Array<{ id: string; status: string; created_at?: string; driver_id?: string | null }>;
+        };
+        setOrders(Array.isArray(data.orders) ? data.orders : []);
+      } finally {
+        setLoadingOrders(false);
+      }
+    };
+
+    fetchMyOrders();
+  }, [user]);
+
   const selectedRestaurant = useMemo(
     () =>
       restaurants.find((r) => r.id === selectedRestaurantId) ?? restaurants[0],
@@ -170,6 +203,12 @@ export default function Home() {
 
   const deliveryFee = items.length ? selectedRestaurant.deliveryFee : 0;
   const orderTotal = totalPrice + deliveryFee;
+  const activeChatOrder =
+    orders.find(
+      (order) =>
+        order.driver_id &&
+        ["confirmed", "preparing", "ready", "in_transit"].includes(order.status)
+    ) ?? null;
 
   // Redirect to login if not authenticated
   useEffect(() => {
@@ -209,7 +248,7 @@ export default function Home() {
             {locationError || "No restaurants found in your area"}
           </p>
           <button
-            onClick={() => window.location.reload()}
+            onClick={fetchRestaurants}
             className="text-xs text-red-600 hover:underline dark:text-red-400"
           >
             Try again
@@ -225,11 +264,17 @@ export default function Home() {
   };
 
   const handleCheckout = async () => {
+    const targetRestaurantId = restaurantId || selectedRestaurantId;
     if (!deliveryAddress.trim()) {
       alert("Please enter a delivery address");
       return;
     }
-    await saveOrder(restaurantId || selectedRestaurantId, deliveryAddress);
+    if (!targetRestaurantId) {
+      alert("Please select a restaurant");
+      return;
+    }
+
+    await saveOrder(targetRestaurantId, deliveryAddress);
     setOrderSuccess(true);
     setDeliveryAddress("");
     setTimeout(() => setOrderSuccess(false), 3000);
@@ -265,6 +310,49 @@ export default function Home() {
 
         <main className="mx-auto grid w-full max-w-6xl grid-cols-1 gap-8 p-6 lg:grid-cols-[1fr_360px]">
           <section className="space-y-8">
+            <section className="rounded-xl border border-black/10 p-4 dark:border-white/20">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold">Your Recent Orders</h2>
+                <button
+                  onClick={async () => {
+                    if (!user) return;
+                    const response = await fetch(`/api/orders?userId=${encodeURIComponent(user.id)}`);
+                    const data = (await response.json()) as {
+                      orders?: Array<{ id: string; status: string; created_at?: string }>;
+                    };
+                    setOrders(Array.isArray(data.orders) ? data.orders : []);
+                  }}
+                  className="text-sm text-zinc-600 hover:underline"
+                >
+                  Refresh
+                </button>
+              </div>
+              {loadingOrders ? (
+                <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">Loading orders...</p>
+              ) : orders.length === 0 ? (
+                <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">No orders yet.</p>
+              ) : (
+                <ul className="mt-3 space-y-2">
+                  {orders.slice(0, 3).map((order) => (
+                    <li
+                      key={order.id}
+                      className="flex items-center justify-between rounded-lg border border-black/10 p-2 text-sm dark:border-white/20"
+                    >
+                      <span>#{order.id.slice(0, 8)}</span>
+                      <span className="font-medium capitalize">{order.status.replace("_", " ")}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+
+            <OrderMessagePanel
+              title="Chat With Driver"
+              orderId={activeChatOrder?.id ?? null}
+              userId={user.id}
+              role="customer"
+            />
+
             <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
               {restaurants.map((restaurant) => {
                 const isSelected = restaurant.id === selectedRestaurant.id;
@@ -334,10 +422,10 @@ export default function Home() {
                         <button
                           onClick={() =>
                             addItem({
-                              id: item.id,
+                              id: `${selectedRestaurant.id}:${item.id}`,
                               name: item.name,
                               price: item.price,
-                              restaurantId: selectedRestaurant.id,
+                              restaurantId: String(selectedRestaurant.id),
                               restaurantName: selectedRestaurant.name,
                               image: item.image,
                             })

@@ -49,6 +49,8 @@ export default function Home() {
   const [loadingMenu, setLoadingMenu] = useState(false);
   const [loadingRestaurants, setLoadingRestaurants] = useState(true);
   const [locationError, setLocationError] = useState<string | null>(null);
+  const [aiView, setAiView] = useState<"none" | "restaurants" | "menu">("none");
+  const [filteredRestaurants, setFilteredRestaurants] = useState<Restaurant[]>([]);
   const {
     items,
     addItem,
@@ -63,6 +65,29 @@ export default function Home() {
     isLoading,
     restaurantId,
   } = useCart();
+
+  const handleAIResponse = (data: any) => {
+    if (!data) return;
+
+    if (data.intent === "show_restaurants") {
+      setAiView("restaurants");
+
+      if (data.filters?.spicy) {
+        const spicy = restaurants.filter(r =>
+          r.name.toLowerCase().includes("spicy") ||
+          r.cuisine?.toLowerCase().includes("spicy")
+        );
+        setFilteredRestaurants(spicy);
+      } else {
+        setFilteredRestaurants(restaurants);
+      }
+    }
+
+    if (data.intent === "show_menu") {
+      setAiView("menu");
+      setSelectedRestaurantId(data.restaurantId);
+    }
+  };
 
   // Fetch nearby restaurants on mount
   useEffect(() => {
@@ -229,14 +254,17 @@ export default function Home() {
       alert("Please enter a delivery address");
       return;
     }
-    await saveOrder(restaurantId || selectedRestaurantId, deliveryAddress);
+    const id = restaurantId ?? selectedRestaurantId;
+    if (!id) return;
+
+    await saveOrder(id, deliveryAddress);
     setOrderSuccess(true);
     setDeliveryAddress("");
     setTimeout(() => setOrderSuccess(false), 3000);
   };
 
   return (
-    <ChatKitWrapper>
+    <ChatKitWrapper onAIResponse={handleAIResponse}>
       <div className="min-h-screen bg-background text-foreground">
         <header className="border-b border-black/10 p-6 dark:border-white/20">
           <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4">
@@ -263,205 +291,121 @@ export default function Home() {
           </div>
         </header>
 
-        <main className="mx-auto grid w-full max-w-6xl grid-cols-1 gap-8 p-6 lg:grid-cols-[1fr_360px]">
-          <section className="space-y-8">
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-              {restaurants.map((restaurant) => {
-                const isSelected = restaurant.id === selectedRestaurant.id;
+        <main className="flex h-[calc(100vh-100px)]">
 
-                return (
-                  <button
-                    key={restaurant.id}
-                    onClick={() => setSelectedRestaurantId(restaurant.id)}
-                    className={`overflow-hidden rounded-xl border text-left transition ${
-                      isSelected
-                        ? "border-foreground"
-                        : "border-black/10 dark:border-white/20"
-                    }`}
-                  >
-                    <Image
-                      src={restaurant.image}
-                      alt={restaurant.name}
-                      width={900}
-                      height={360}
-                      className="h-36 w-full object-cover"
-                    />
-                    <div className="space-y-1 p-4">
-                      <h2 className="font-semibold">{restaurant.name}</h2>
-                      <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                        {restaurant.cuisine} • {restaurant.eta}
-                      </p>
-                      <p className="text-sm">
-                        Delivery {formatCurrency(restaurant.deliveryFee)}
-                      </p>
-                    </div>
-                  </button>
-                );
-              })}
+          {/* Sidebar */}
+          <aside className="w-64 border-r p-4 hidden md:block">
+            <h2 className="font-semibold mb-4">Favorites</h2>
+            <div className="space-y-2 text-sm">
+              <p className="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/10">Past Orders</p>
+              <p className="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/10">Saved Meals</p>
+              <p className="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/10">Recently Viewed</p>
             </div>
-
-            <section className="space-y-4">
-              <h3 className="text-xl font-semibold">{selectedRestaurant.name} Menu</h3>
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                {loadingMenu ? (
-                  <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                    Loading menu...
-                  </p>
-                ) : selectedMenu.length === 0 ? (
-                  <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                    No menu items found for this restaurant.
-                  </p>
-                ) : (
-                  selectedMenu.map((item) => (
-                    <article
-                      key={item.id}
-                      className="rounded-xl border border-black/10 p-4 dark:border-white/20"
-                    >
-                      <Image
-                        src={item.image}
-                        alt={item.name}
-                        width={900}
-                        height={400}
-                        className="mb-3 h-40 w-full rounded-lg object-cover"
-                      />
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <h4 className="font-medium">{item.name}</h4>
-                          <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                            {formatCurrency(item.price)}
-                          </p>
-                        </div>
-                        <button
-                          onClick={() =>
-                            addItem({
-                              id: item.id,
-                              name: item.name,
-                              price: item.price,
-                              restaurantId: selectedRestaurant.id,
-                              restaurantName: selectedRestaurant.name,
-                              image: item.image,
-                            })
-                          }
-                          className="rounded-full border border-black/10 px-4 py-2 text-sm hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/10"
-                        >
-                          Add
-                        </button>
-                      </div>
-                    </article>
-                  ))
-                )}
-              </div>
-            </section>
-          </section>
-
-          <aside
-            className={`rounded-xl border border-black/10 p-4 dark:border-white/20 ${
-              isOpen ? "block" : "hidden lg:block"
-            }`}
-          >
-            <div className="mb-4 flex items-center justify-between">
-              <h3 className="text-lg font-semibold">Your Cart</h3>
-              {!!items.length && (
-                <button
-                  onClick={clearCart}
-                  className="text-sm text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200"
-                >
-                  Clear
-                </button>
-              )}
-            </div>
-
-            {orderSuccess && (
-              <div className="mb-4 rounded-lg bg-green-100 p-3 text-sm text-green-800 dark:bg-green-900/30 dark:text-green-400">
-                ✓ Order placed successfully!
-              </div>
-            )}
-
-            {!items.length ? (
-              <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                No items yet. Add something tasty.
-              </p>
-            ) : (
-              <div className="space-y-4">
-                <ul className="space-y-3 max-h-64 overflow-y-auto">
-                  {items.map((item) => (
-                    <li key={item.id} className="rounded-lg border border-black/10 p-3 dark:border-white/20">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="font-medium">{item.name}</p>
-                          <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                            {formatCurrency(item.price)} each
-                          </p>
-                        </div>
-                        <button
-                          onClick={() => removeItem(item.id)}
-                          className="text-xs text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200"
-                        >
-                          Remove
-                        </button>
-                      </div>
-                      <div className="mt-3 flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => updateQuantity(item.id, item.quantity - 1)}
-                            className="h-7 w-7 rounded-full border border-black/10 text-sm dark:border-white/20"
-                          >
-                            -
-                          </button>
-                          <span className="text-sm">{item.quantity}</span>
-                          <button
-                            onClick={() => updateQuantity(item.id, item.quantity + 1)}
-                            className="h-7 w-7 rounded-full border border-black/10 text-sm dark:border-white/20"
-                          >
-                            +
-                          </button>
-                        </div>
-                        <p className="text-sm font-medium">
-                          {formatCurrency(item.price * item.quantity)}
-                        </p>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-
-                <div>
-                  <label className="mb-2 block text-sm font-medium">
-                    Delivery Address
-                  </label>
-                  <input
-                    type="text"
-                    value={deliveryAddress}
-                    onChange={(e) => setDeliveryAddress(e.target.value)}
-                    placeholder="Enter your delivery address"
-                    className="w-full rounded-lg border border-black/10 bg-transparent px-3 py-2 text-sm dark:border-white/20"
-                  />
-                </div>
-
-                <div className="space-y-1 border-t border-black/10 pt-3 text-sm dark:border-white/20">
-                  <div className="flex items-center justify-between">
-                    <span>Subtotal</span>
-                    <span>{formatCurrency(totalPrice)}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span>Delivery</span>
-                    <span>{formatCurrency(deliveryFee)}</span>
-                  </div>
-                  <div className="flex items-center justify-between pt-1 text-base font-semibold">
-                    <span>Total</span>
-                    <span>{formatCurrency(orderTotal)}</span>
-                  </div>
-                </div>
-
-                <button
-                  onClick={handleCheckout}
-                  disabled={isLoading || items.length === 0 || !deliveryAddress.trim()}
-                  className="w-full rounded-full bg-foreground px-4 py-3 text-sm font-semibold text-background hover:opacity-90 disabled:opacity-60"
-                >
-                  {isLoading ? "Processing..." : "Checkout"}
-                </button>
-              </div>
-            )}
           </aside>
+
+          {/* Main Chat UI */}
+          <div className="flex-1 flex flex-col">
+
+            {/* Chat Content */}
+            <div className="flex-1 overflow-y-auto flex justify-center p-6">
+              <div className="w-full max-w-3xl space-y-6">
+
+                {/* Heading */}
+                <h2 className="text-2xl font-semibold text-center">
+                  What are you craving today?
+                </h2>
+
+                {/* 🧠 AI → Restaurants */}
+                {aiView === "restaurants" && (
+                  <div className="grid md:grid-cols-3 gap-4">
+                    {(filteredRestaurants.length ? filteredRestaurants : restaurants).map((restaurant) => (
+                      <div
+                        key={restaurant.id}
+                        className="bg-white dark:bg-neutral-900 p-3 rounded-xl shadow"
+                      >
+                        <Image
+                          src={restaurant.image}
+                          alt={restaurant.name}
+                          width={300}
+                          height={200}
+                          className="rounded-lg mb-2"
+                        />
+                        <h3 className="font-semibold">{restaurant.name}</h3>
+                        <p className="text-sm text-zinc-500">{restaurant.eta}</p>
+
+                        <button
+                          onClick={() => {
+                            setSelectedRestaurantId(restaurant.id);
+                            setAiView("menu");
+                          }}
+                          className="mt-3 w-full bg-green-600 text-white py-2 rounded-lg"
+                        >
+                          View Menu
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* 🍔 AI → Menu */}
+                {aiView === "menu" && selectedRestaurant && (
+                  <div className="space-y-4">
+                    <h3 className="text-xl font-semibold">
+                      {selectedRestaurant.name}
+                    </h3>
+
+                    <div className="grid md:grid-cols-2 gap-4">
+                      {selectedMenu.map((item) => (
+                        <div key={item.id} className="p-4 border rounded-xl">
+                          <Image
+                            src={item.image}
+                            alt={item.name}
+                            width={300}
+                            height={200}
+                            className="rounded-lg mb-2"
+                          />
+                          <h4 className="font-medium">{item.name}</h4>
+                          <p className="text-sm">{formatCurrency(item.price)}</p>
+
+                          <button
+                            onClick={() =>
+                              addItem({
+                                id: item.id,
+                                name: item.name,
+                                price: item.price,
+                                restaurantId: selectedRestaurant.id,
+                                restaurantName: selectedRestaurant.name,
+                                image: item.image,
+                              })
+                            }
+                            className="mt-2 px-3 py-2 bg-foreground text-background rounded-lg"
+                          >
+                            Add to Cart
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+              </div>
+            </div>
+
+            {/* Input Bar (UI only, your real chat still works) */}
+            <div className="border-t p-4 bg-background">
+              <div className="max-w-3xl mx-auto flex gap-3">
+                <input
+                  placeholder="Ask for food..."
+                  className="flex-1 p-3 rounded-full border"
+                />
+                <button className="bg-blue-600 text-white px-4 rounded-full">
+                  ➤
+                </button>
+              </div>
+            </div>
+
+          </div>
+
         </main>
       </div>
     </ChatKitWrapper>

@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "QuickBite",
+  title: "QuickByte",
   description: "Food delivery app frontend",
 };
 

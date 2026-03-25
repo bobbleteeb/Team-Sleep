@@ -5,11 +5,11 @@ import { useAuth } from "./AuthContext";
 import { supabase } from "../lib/supabase";
 
 export interface CartItem {
-  id: number;
+  id: string;
   name: string;
   price: number;
   quantity: number;
-  restaurantId: number;
+  restaurantId: string;
   restaurantName: string;
   image: string;
 }
@@ -17,17 +17,17 @@ export interface CartItem {
 interface CartContextType {
   items: CartItem[];
   addItem: (item: Omit<CartItem, "quantity">) => void;
-  removeItem: (id: number) => void;
-  updateQuantity: (id: number, quantity: number) => void;
+  removeItem: (id: string) => void;
+  updateQuantity: (id: string, quantity: number) => void;
   clearCart: () => void;
   totalItems: number;
   totalPrice: number;
   isOpen: boolean;
   setIsOpen: (open: boolean) => void;
-  saveOrder: (restaurantId: number, deliveryAddress: string) => Promise<void>;
+  saveOrder: (restaurantId: string, deliveryAddress: string) => Promise<void>;
   isLoading: boolean;
-  restaurantId: number | null;
-  setRestaurantId: (id: number) => void;
+  restaurantId: string | null;
+  setRestaurantId: (id: string) => void;
 }
 
 const CartContext = createContext<CartContextType | null>(null);
@@ -38,12 +38,15 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const [isOpen, setIsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [customerId, setCustomerId] = useState<string>("");
-  const [restaurantId, setRestaurantId] = useState<number | null>(null);
+  const [restaurantId, setRestaurantId] = useState<string | null>(null);
 
   // Initialize customer and load cart from Supabase
   useEffect(() => {
     const initCart = async () => {
       if (!user) {
+        setItems([]);
+        setRestaurantId(null);
+        setCustomerId("");
         setIsLoading(false);
         return;
       }
@@ -89,7 +92,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
                 setItems(data.items);
                 // Set restaurant from first item
                 if (data.items[0]) {
-                  setRestaurantId(data.items[0].restaurantId);
+                  setRestaurantId(String(data.items[0].restaurantId));
                 }
               }
             }
@@ -156,11 +159,11 @@ export function CartProvider({ children }: { children: ReactNode }) {
     setIsOpen(true);
   };
 
-  const removeItem = (id: number) => {
+  const removeItem = (id: string) => {
     setItems((prev) => prev.filter((i) => i.id !== id));
   };
 
-  const updateQuantity = (id: number, quantity: number) => {
+  const updateQuantity = (id: string, quantity: number) => {
     if (quantity <= 0) {
       removeItem(id);
       return;
@@ -175,7 +178,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
     setRestaurantId(null);
   };
 
-  const saveOrder = async (restaurantId: number, deliveryAddress: string) => {
+  const saveOrder = async (restaurantId: string, deliveryAddress: string) => {
     if (!customerId || items.length === 0) return;
 
     try {

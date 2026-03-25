@@ -3,6 +3,7 @@
 -- IMPORTANT: Drop old tables first if they exist from previous schema
 DROP TABLE IF EXISTS carts CASCADE;
 DROP TABLE IF EXISTS orders CASCADE;
+DROP TABLE IF EXISTS order_messages CASCADE;
 DROP TABLE IF EXISTS menus CASCADE;
 DROP TABLE IF EXISTS restaurants CASCADE;
 DROP TABLE IF EXISTS drivers CASCADE;
@@ -90,6 +91,18 @@ CREATE TABLE IF NOT EXISTS orders (
   FOREIGN KEY (restaurant_id) REFERENCES restaurants(id) ON DELETE CASCADE
 );
 
+-- Create order messages table for direct customer-driver chat
+CREATE TABLE IF NOT EXISTS order_messages (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  order_id UUID NOT NULL,
+  sender_user_id UUID NOT NULL,
+  sender_role TEXT NOT NULL CHECK (sender_role IN ('customer', 'driver')),
+  content TEXT NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
+  FOREIGN KEY (sender_user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
 -- Create carts table (updated to use customer_id)
 CREATE TABLE IF NOT EXISTS carts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -112,6 +125,8 @@ CREATE INDEX IF NOT EXISTS idx_menus_restaurant_id ON menus(restaurant_id);
 CREATE INDEX IF NOT EXISTS idx_orders_customer_id ON orders(customer_id);
 CREATE INDEX IF NOT EXISTS idx_orders_driver_id ON orders(driver_id);
 CREATE INDEX IF NOT EXISTS idx_orders_restaurant_id ON orders(restaurant_id);
+CREATE INDEX IF NOT EXISTS idx_order_messages_order_id ON order_messages(order_id);
+CREATE INDEX IF NOT EXISTS idx_order_messages_sender_user_id ON order_messages(sender_user_id);
 CREATE INDEX IF NOT EXISTS idx_carts_customer_id ON carts(customer_id);
 
 -- Enable RLS (Row Level Security)
@@ -121,6 +136,7 @@ ALTER TABLE drivers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE restaurants ENABLE ROW LEVEL SECURITY;
 ALTER TABLE menus ENABLE ROW LEVEL SECURITY;
 ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE order_messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE carts ENABLE ROW LEVEL SECURITY;
 
 -- Create policies for public access (for demo - adjust for production)
@@ -144,6 +160,15 @@ CREATE POLICY "Allow customers to create orders" ON orders
 
 CREATE POLICY "Allow drivers to read assigned orders" ON orders
   FOR SELECT USING (true);
+
+CREATE POLICY "Allow drivers to update order status" ON orders
+  FOR UPDATE USING (true) WITH CHECK (true);
+
+CREATE POLICY "Allow order participants to read messages" ON order_messages
+  FOR SELECT USING (true);
+
+CREATE POLICY "Allow order participants to create messages" ON order_messages
+  FOR INSERT WITH CHECK (true);
 
 CREATE POLICY "Allow customers to manage their own cart" ON carts
   FOR ALL USING (true);

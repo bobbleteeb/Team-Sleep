@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { mockRestaurants } from "@/app/data/mockRestaurants";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL || "",
@@ -577,20 +576,10 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(sorted);
     }
 
-    // 4. Fall back to mock restaurants
-    console.log("⚠️ Using mock restaurants");
-    const sorted = mockRestaurants
-      .sort(
-        (a, b) =>
-          calculateDistance(lat, lon, a.latitude, a.longitude) -
-          calculateDistance(lat, lon, b.latitude, b.longitude)
-      )
-      .slice(0, 10);
-
-    console.log(`✅ Returning ${sorted.length} mock restaurants`);
-    return NextResponse.json(sorted);
+    // 4. No demo/mock fallback: return empty list so client can show proper state.
+    return NextResponse.json([]);
   } catch (error) {
     console.error("🚨 Error in /api/restaurants/nearby:", error);
-    return NextResponse.json(mockRestaurants.slice(0, 10));
+    return NextResponse.json([], { status: 500 });
   }
 }

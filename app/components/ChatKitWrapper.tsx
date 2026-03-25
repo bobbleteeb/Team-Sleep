@@ -10,14 +10,14 @@ type ChatMessage = {
 };
 
 type MenuItem = {
-  id: number;
+  id: string;
   name: string;
   price: number;
   image: string;
 };
 
 type Restaurant = {
-  id: number;
+  id: string;
   name: string;
   cuisine?: string;
   latitude: number;
@@ -40,7 +40,15 @@ type ChatResponse = {
   action?: OrderAction;
 };
 
-export default function ChatKitWrapper({ children }: { children: React.ReactNode }) {
+interface ChatKitWrapperProps {
+  children: React.ReactNode;
+  onAIResponse?: (data: unknown) => void;
+}
+
+export default function ChatKitWrapper({
+  children,
+  onAIResponse,
+}: ChatKitWrapperProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -63,8 +71,25 @@ export default function ChatKitWrapper({ children }: { children: React.ReactNode
       try {
         const response = await fetch("/api/restaurants/nearby?latitude=40.7128&longitude=-74.006");
         if (response.ok) {
-          const data = await response.json();
-          setRestaurants(data);
+          const data = (await response.json()) as Array<{
+            id: string | number;
+            name: string;
+            cuisine?: string;
+            latitude: number;
+            longitude: number;
+            menu?: Array<{ id: string | number; name: string; price: number; image: string }>;
+            deliveryFee: number;
+            eta: string;
+            image: string;
+          }>;
+          const normalized: Restaurant[] = data.map((restaurant) => ({
+            ...restaurant,
+            id: String(restaurant.id),
+            menu: Array.isArray(restaurant.menu)
+              ? restaurant.menu.map((item) => ({ ...item, id: String(item.id) }))
+              : [],
+          }));
+          setRestaurants(normalized);
         }
       } catch (error) {
         console.error("Error loading restaurants:", error);
@@ -114,6 +139,22 @@ export default function ChatKitWrapper({ children }: { children: React.ReactNode
       const data: ChatResponse = await response.json();
       const { reply, action } = data;
 
+      if (action && onAIResponse) {
+        onAIResponse(action);
+      }
+
+      // FALLBACK: try parsing reply
+      else {
+        try {
+          const parsed = JSON.parse(reply);
+          if (onAIResponse) {
+            onAIResponse(parsed);
+          }
+        } catch {
+          // normal text → ignore
+        }
+      }
+
       // Handle actions from the chat
       if (action) {
         if (action.action === "add_to_cart" && action.restaurant && action.items) {
@@ -130,10 +171,10 @@ export default function ChatKitWrapper({ children }: { children: React.ReactNode
                 if (menuItem) {
                   for (let i = 0; i < orderItem.quantity; i++) {
                     addItem({
-                      id: menuItem.id,
+                      id: `${selectedRestaurant.id}:${menuItem.id}`,
                       name: menuItem.name,
                       price: menuItem.price,
-                      restaurantId: selectedRestaurant.id,
+                      restaurantId: String(selectedRestaurant.id),
                       restaurantName: selectedRestaurant.name,
                       image: menuItem.image,
                     });
@@ -156,7 +197,11 @@ export default function ChatKitWrapper({ children }: { children: React.ReactNode
           }
         } else if (action.action === "place_order" && action.delivery_address) {
           if (items.length > 0) {
-            const restaurantId = items[0].restaurantId || 1;
+            const restaurantId = items[0]?.restaurantId;
+            if (!restaurantId) {
+              setStatusMessage("⚠️ Cannot place order - cart has invalid restaurant");
+              return;
+            }
             await saveOrder(restaurantId, action.delivery_address);
             setStatusMessage("✓ Order placed successfully! 🎉");
             const confirmMessage: ChatMessage = {

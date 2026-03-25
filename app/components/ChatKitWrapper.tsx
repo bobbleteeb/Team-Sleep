@@ -42,7 +42,7 @@ type ChatResponse = {
 
 interface ChatKitWrapperProps {
   children: React.ReactNode;
-  onAIResponse?: (data: any) => void;
+  onAIResponse?: (data: unknown) => void;
 }
 
 export default function ChatKitWrapper({
@@ -150,7 +150,7 @@ export default function ChatKitWrapper({
           if (onAIResponse) {
             onAIResponse(parsed);
           }
-        } catch (e) {
+        } catch {
           // normal text → ignore
         }
       }

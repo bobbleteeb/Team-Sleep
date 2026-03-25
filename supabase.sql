@@ -52,8 +52,11 @@ CREATE TABLE IF NOT EXISTS restaurants (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL,
   cuisine TEXT NOT NULL,
+  latitude DECIMAL(10, 8),
+  longitude DECIMAL(11, 8),
   address TEXT NOT NULL,
   phone TEXT,
+  website TEXT,
   delivery_fee DECIMAL(10, 2) NOT NULL,
   eta TEXT NOT NULL,
   image TEXT,
@@ -61,6 +64,11 @@ CREATE TABLE IF NOT EXISTS restaurants (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE SET NULL
 );
+
+-- Backward-compatible migration for existing databases that predate geolocation fields.
+ALTER TABLE restaurants ADD COLUMN IF NOT EXISTS latitude DECIMAL(10, 8);
+ALTER TABLE restaurants ADD COLUMN IF NOT EXISTS longitude DECIMAL(11, 8);
+ALTER TABLE restaurants ADD COLUMN IF NOT EXISTS website TEXT;
 
 -- Create menus table
 CREATE TABLE IF NOT EXISTS menus (
@@ -121,6 +129,7 @@ CREATE INDEX IF NOT EXISTS idx_customers_user_id ON customers(user_id);
 CREATE INDEX IF NOT EXISTS idx_drivers_user_id ON drivers(user_id);
 CREATE INDEX IF NOT EXISTS idx_drivers_status ON drivers(status);
 CREATE INDEX IF NOT EXISTS idx_restaurants_name ON restaurants(name);
+CREATE INDEX IF NOT EXISTS idx_restaurants_location ON restaurants(latitude, longitude);
 CREATE INDEX IF NOT EXISTS idx_menus_restaurant_id ON menus(restaurant_id);
 CREATE INDEX IF NOT EXISTS idx_orders_customer_id ON orders(customer_id);
 CREATE INDEX IF NOT EXISTS idx_orders_driver_id ON orders(driver_id);

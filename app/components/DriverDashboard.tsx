@@ -3,6 +3,68 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import OrderMessagePanel from "./OrderMessagePanel";
+
+type OrderItem = {
+  name: string;
+  qty?: number;
+  quantity?: number;
+};
+
+type DriverOrder = {
+  id: string;
+  delivery_address: string;
+  items?: OrderItem[];
+  total_price?: number;
+  status?: string;
+  created_at?: string;
+  notes?: string;
+};
+
+type DriverProfile = {
+  id: string;
+  status: "available" | "busy" | "offline";
+  rating?: number;
+  total_deliveries?: number;
+  vehicle_info?: string;
+  license_number?: string;
+};
+
+type DriverStats = {
+  todayEarnings: number;
+  totalEarnings: number;
+  completedDeliveries: number;
+  activeDeliveries: number;
+};
+
+type DriverOrdersResponse = {
+  orders?: DriverOrder[];
+  activeOrder?: DriverOrder | null;
+  canAccept?: boolean;
+  driver?: DriverProfile | null;
+  stats?: DriverStats;
+  error?: string;
+};
+
+type DriverCopilotIntent =
+  | "eta_update"
+  | "cannot_reach_customer"
+  | "arrival_message"
+  | "delay_notice"
+  | "custom";
+
+const formatCurrency = (value?: number) =>
+  new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(
+    value ?? 0
+  );
+
+function formatDuration(ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  return `${hours}h ${minutes}m`;
+}
 
 type Order = {
   id: number;
@@ -65,6 +127,9 @@ export default function DriverDashboard() {
   };
 
   if (user?.role !== "driver") return null;
+
+  const isOnline = driver?.status !== "offline";
+  const shiftDuration = shiftStartedAt ? formatDuration(now - shiftStartedAt) : "Not started";
 
   return (
     <div className="min-h-screen bg-background pb-20">
@@ -167,7 +232,75 @@ export default function DriverDashboard() {
               <p className="text-sm text-zinc-500">Rating</p>
               <p className="text-xl font-bold">5.0 ⭐</p>
             </div>
+          )}
+
+          <div className="space-y-2">
+            <label className="block text-sm font-medium">Generated Message</label>
+            <textarea
+              value={copilotText}
+              onChange={(e) => setCopilotText(e.target.value)}
+              rows={4}
+              placeholder="Your generated customer message will appear here"
+              className="w-full rounded-lg border border-black/10 bg-transparent px-3 py-2 text-sm dark:border-white/20"
+            />
+            <button
+              onClick={copyCopilotText}
+              disabled={!copilotText.trim()}
+              className="rounded border border-black/10 px-3 py-1 text-sm hover:bg-black/5 disabled:opacity-60 dark:border-white/20 dark:hover:bg-white/10"
+            >
+              Copy Message
+            </button>
           </div>
+        </section>
+
+        <section className="space-y-4">
+          <h2 className="text-xl font-semibold">Order Offers</h2>
+          <p className="text-sm text-zinc-600 dark:text-zinc-400">
+            {isOnline
+              ? "You are online and receiving offers."
+              : "You are offline. Go online to receive new order offers."}
+          </p>
+
+          {loading ? (
+            <div className="rounded-xl border border-black/10 p-8 text-center text-zinc-600 dark:border-white/20 dark:text-zinc-400">
+              <p>Loading available deliveries...</p>
+            </div>
+          ) : displayedOrders.length === 0 ? (
+            <div className="rounded-xl border border-black/10 p-8 text-center text-zinc-600 dark:border-white/20 dark:text-zinc-400">
+              <p>No pending orders right now.</p>
+            </div>
+          ) : (
+            <div className="grid gap-4">
+              {displayedOrders.map((order) => (
+                <div key={order.id} className="rounded-xl border border-black/10 p-4 dark:border-white/20">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="text-sm text-zinc-600 dark:text-zinc-400">Order #{order.id}</p>
+                      <p className="font-medium">{order.delivery_address}</p>
+                      <p className="text-sm text-zinc-500">Items: {order.items?.length ?? 0}</p>
+                      <p className="text-sm text-zinc-500">Total: {formatCurrency(order.total_price)}</p>
+                    </div>
+                    <div className="flex flex-col items-end gap-2">
+                      <button
+                        onClick={() => acceptOrder(order.id)}
+                        disabled={!canAccept || !isOnline || !!accepting[order.id]}
+                        className="rounded bg-foreground px-3 py-1 text-sm font-medium text-background disabled:opacity-60"
+                        title={!canAccept ? "Finish current delivery first" : "Accept this order"}
+                      >
+                        {accepting[order.id] ? "Accepting..." : "Accept"}
+                      </button>
+                      <button
+                        onClick={() => declineOrder(order.id)}
+                        className="rounded border border-black/10 px-3 py-1 text-sm hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/10"
+                      >
+                        Decline
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </section>
       </main>
 

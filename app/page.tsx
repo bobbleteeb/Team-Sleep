@@ -5,19 +5,20 @@ import { useMemo, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import ChatKitWrapper from "./components/ChatKitWrapper";
 import DriverDashboard from "./components/DriverDashboard";
+import OrderMessagePanel from "./components/OrderMessagePanel";
 import { useCart } from "./context/CartContext";
 import { useAuth } from "./context/AuthContext";
 import { getUserLocation } from "./lib/geolocation";
 
 interface MenuItem {
-  id: number;
+  id: string;
   name: string;
   price: number;
   image: string;
 }
 
 interface Restaurant {
-  id: number;
+  id: string;
   name: string;
   cuisine?: string;
   latitude: number;
@@ -39,7 +40,7 @@ const formatCurrency = (value: number) =>
 export default function Home() {
   const { user, logout, isLoading: authLoading } = useAuth();
   const router = useRouter();
-  const [selectedRestaurantId, setSelectedRestaurantId] = useState<number | null>(
+  const [selectedRestaurantId, setSelectedRestaurantId] = useState<string | null>(
     null
   );
   const [deliveryAddress, setDeliveryAddress] = useState("");
@@ -49,8 +50,10 @@ export default function Home() {
   const [loadingMenu, setLoadingMenu] = useState(false);
   const [loadingRestaurants, setLoadingRestaurants] = useState(true);
   const [locationError, setLocationError] = useState<string | null>(null);
-  const [aiView, setAiView] = useState<"none" | "restaurants" | "menu">("none");
-  const [filteredRestaurants, setFilteredRestaurants] = useState<Restaurant[]>([]);
+  const [orders, setOrders] = useState<
+    Array<{ id: string; status: string; created_at?: string; driver_id?: string | null }>
+  >([]);
+  const [loadingOrders, setLoadingOrders] = useState(false);
   const {
     items,
     addItem,
@@ -66,93 +69,72 @@ export default function Home() {
     restaurantId,
   } = useCart();
 
-  const handleAIResponse = (data: any) => {
-    if (!data) return;
+  const fetchRestaurants = async () => {
+    try {
+      setLoadingRestaurants(true);
+      const location = await getUserLocation();
 
-    if (data.intent === "show_restaurants") {
-      setAiView("restaurants");
+      const response = await fetch(
+        `/api/restaurants/nearby?latitude=${location.latitude}&longitude=${location.longitude}`
+      );
 
-      if (data.filters?.spicy) {
-        const spicy = restaurants.filter(r =>
-          r.name.toLowerCase().includes("spicy") ||
-          r.cuisine?.toLowerCase().includes("spicy")
-        );
-        setFilteredRestaurants(spicy);
-      } else {
-        setFilteredRestaurants(restaurants);
+      if (!response.ok) throw new Error("Failed to fetch restaurants");
+
+      const data = await response.json();
+
+      // Transform API data to our Restaurant format
+      interface OSMRestaurant {
+        id: string | number;
+        name: string;
+        cuisine?: string;
+        latitude: number;
+        longitude: number;
+        address?: string;
+        phone?: string;
+        website?: string;
+        menu?: Array<{ id: string | number; name: string; price: number; image: string }>;
+        deliveryFee?: number;
+        eta?: string;
+        image?: string;
       }
-    }
+      const transformedRestaurants: Restaurant[] = data.map(
+        (r: OSMRestaurant, idx: number) => {
+          return {
+            id: String(r.id),
+            name: r.name,
+            cuisine: r.cuisine || "Restaurant",
+            latitude: r.latitude,
+            longitude: r.longitude,
+            address: r.address,
+            phone: r.phone,
+            website: r.website,
+            menu: Array.isArray(r.menu)
+              ? r.menu.map((m) => ({ ...m, id: String(m.id) }))
+              : [],
+            deliveryFee: r.deliveryFee ?? 3.99 + (idx % 3) * 0.5,
+            eta: r.eta ?? `${20 + (idx % 15)} mins`,
+            image: r.image || `https://picsum.photos/seed/restaurant-${idx + 1}/900/400`,
+          };
+        }
+      );
 
-    if (data.intent === "show_menu") {
-      setAiView("menu");
-      setSelectedRestaurantId(data.restaurantId);
+      setRestaurants(transformedRestaurants);
+      if (transformedRestaurants.length > 0) {
+        setSelectedRestaurantId(transformedRestaurants[0].id);
+      }
+      setLocationError(null);
+    } catch (error) {
+      console.error("Error fetching restaurants:", error);
+      setLocationError(
+        "Could not load restaurants. Please check your location and try again."
+      );
+    } finally {
+      setLoadingRestaurants(false);
     }
   };
 
   // Fetch nearby restaurants on mount
   useEffect(() => {
-    const fetchRestaurants = async () => {
-      try {
-        setLoadingRestaurants(true);
-        const location = await getUserLocation();
-
-        const response = await fetch(
-          `/api/restaurants/nearby?latitude=${location.latitude}&longitude=${location.longitude}`
-        );
-
-        if (!response.ok) throw new Error("Failed to fetch restaurants");
-
-        const data = await response.json();
-
-        // Transform API data to our Restaurant format
-        interface OSMRestaurant {
-          id: number;
-          name: string;
-          cuisine?: string;
-          latitude: number;
-          longitude: number;
-          address?: string;
-          phone?: string;
-          website?: string;
-          menu?: MenuItem[];
-          deliveryFee?: number;
-          eta?: string;
-          image?: string;
-        }
-        const transformedRestaurants: Restaurant[] = data.map(
-          (r: OSMRestaurant, idx: number) => {
-            return {
-              id: r.id,
-              name: r.name,
-              cuisine: r.cuisine || "Restaurant",
-              latitude: r.latitude,
-              longitude: r.longitude,
-              address: r.address,
-              phone: r.phone,
-              website: r.website,
-              menu: Array.isArray(r.menu) ? r.menu : [],
-              deliveryFee: r.deliveryFee ?? 3.99 + (idx % 3) * 0.5,
-              eta: r.eta ?? `${20 + (idx % 15)} mins`,
-              image: r.image || `https://picsum.photos/seed/restaurant-${idx + 1}/900/400`,
-            };
-          }
-        );
-
-        setRestaurants(transformedRestaurants);
-        if (transformedRestaurants.length > 0) {
-          setSelectedRestaurantId(transformedRestaurants[0].id);
-        }
-        setLocationError(null);
-      } catch (error) {
-        console.error("Error fetching restaurants:", error);
-        setLocationError(
-          "Could not load restaurants. Please check your location and try again."
-        );
-      } finally {
-        setLoadingRestaurants(false);
-      }
-    };
-
     fetchRestaurants();
   }, []);
 
@@ -171,8 +153,15 @@ export default function Home() {
 
         if (!response.ok) throw new Error("Failed to fetch menu");
 
-        const data = (await response.json()) as MenuItem[];
-        setSelectedMenu(Array.isArray(data) ? data : []);
+        const data = (await response.json()) as Array<{
+          id: string | number;
+          name: string;
+          price: number;
+          image: string;
+        }>;
+        setSelectedMenu(
+          Array.isArray(data) ? data.map((item) => ({ ...item, id: String(item.id) })) : []
+        );
       } catch (error) {
         console.error("Error fetching menu:", error);
         const fallbackRestaurant = restaurants.find(
@@ -187,6 +176,25 @@ export default function Home() {
     fetchSelectedMenu();
   }, [selectedRestaurantId, restaurants]);
 
+  useEffect(() => {
+    const fetchMyOrders = async () => {
+      if (!user) return;
+      try {
+        setLoadingOrders(true);
+        const response = await fetch(`/api/orders?userId=${encodeURIComponent(user.id)}`);
+        if (!response.ok) return;
+        const data = (await response.json()) as {
+          orders?: Array<{ id: string; status: string; created_at?: string; driver_id?: string | null }>;
+        };
+        setOrders(Array.isArray(data.orders) ? data.orders : []);
+      } finally {
+        setLoadingOrders(false);
+      }
+    };
+
+    fetchMyOrders();
+  }, [user]);
+
   const selectedRestaurant = useMemo(
     () =>
       restaurants.find((r) => r.id === selectedRestaurantId) ?? restaurants[0],
@@ -195,6 +203,12 @@ export default function Home() {
 
   const deliveryFee = items.length ? selectedRestaurant.deliveryFee : 0;
   const orderTotal = totalPrice + deliveryFee;
+  const activeChatOrder =
+    orders.find(
+      (order) =>
+        order.driver_id &&
+        ["confirmed", "preparing", "ready", "in_transit"].includes(order.status)
+    ) ?? null;
 
   // Redirect to login if not authenticated
   useEffect(() => {
@@ -234,7 +248,7 @@ export default function Home() {
             {locationError || "No restaurants found in your area"}
           </p>
           <button
-            onClick={() => window.location.reload()}
+            onClick={fetchRestaurants}
             className="text-xs text-red-600 hover:underline dark:text-red-400"
           >
             Try again
@@ -250,21 +264,24 @@ export default function Home() {
   };
 
   const handleCheckout = async () => {
+    const targetRestaurantId = restaurantId || selectedRestaurantId;
     if (!deliveryAddress.trim()) {
       alert("Please enter a delivery address");
       return;
     }
-    const id = restaurantId ?? selectedRestaurantId;
-    if (!id) return;
+    if (!targetRestaurantId) {
+      alert("Please select a restaurant");
+      return;
+    }
 
-    await saveOrder(id, deliveryAddress);
+    await saveOrder(targetRestaurantId, deliveryAddress);
     setOrderSuccess(true);
     setDeliveryAddress("");
     setTimeout(() => setOrderSuccess(false), 3000);
   };
 
   return (
-    <ChatKitWrapper onAIResponse={handleAIResponse}>
+    <ChatKitWrapper>
       <div className="min-h-screen bg-background text-foreground">
         <header className="border-b border-black/10 p-6 dark:border-white/20">
           <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4">
@@ -291,121 +308,248 @@ export default function Home() {
           </div>
         </header>
 
-        <main className="flex h-[calc(100vh-100px)]">
-
-          {/* Sidebar */}
-          <aside className="w-64 border-r p-4 hidden md:block">
-            <h2 className="font-semibold mb-4">Favorites</h2>
-            <div className="space-y-2 text-sm">
-              <p className="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/10">Past Orders</p>
-              <p className="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/10">Saved Meals</p>
-              <p className="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/10">Recently Viewed</p>
-            </div>
-          </aside>
-
-          {/* Main Chat UI */}
-          <div className="flex-1 flex flex-col">
-
-            {/* Chat Content */}
-            <div className="flex-1 overflow-y-auto flex justify-center p-6">
-              <div className="w-full max-w-3xl space-y-6">
-
-                {/* Heading */}
-                <h2 className="text-2xl font-semibold text-center">
-                  What are you craving today?
-                </h2>
-
-                {/* 🧠 AI → Restaurants */}
-                {aiView === "restaurants" && (
-                  <div className="grid md:grid-cols-3 gap-4">
-                    {(filteredRestaurants.length ? filteredRestaurants : restaurants).map((restaurant) => (
-                      <div
-                        key={restaurant.id}
-                        className="bg-white dark:bg-neutral-900 p-3 rounded-xl shadow"
-                      >
-                        <Image
-                          src={restaurant.image}
-                          alt={restaurant.name}
-                          width={300}
-                          height={200}
-                          className="rounded-lg mb-2"
-                        />
-                        <h3 className="font-semibold">{restaurant.name}</h3>
-                        <p className="text-sm text-zinc-500">{restaurant.eta}</p>
-
-                        <button
-                          onClick={() => {
-                            setSelectedRestaurantId(restaurant.id);
-                            setAiView("menu");
-                          }}
-                          className="mt-3 w-full bg-green-600 text-white py-2 rounded-lg"
-                        >
-                          View Menu
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* 🍔 AI → Menu */}
-                {aiView === "menu" && selectedRestaurant && (
-                  <div className="space-y-4">
-                    <h3 className="text-xl font-semibold">
-                      {selectedRestaurant.name}
-                    </h3>
-
-                    <div className="grid md:grid-cols-2 gap-4">
-                      {selectedMenu.map((item) => (
-                        <div key={item.id} className="p-4 border rounded-xl">
-                          <Image
-                            src={item.image}
-                            alt={item.name}
-                            width={300}
-                            height={200}
-                            className="rounded-lg mb-2"
-                          />
-                          <h4 className="font-medium">{item.name}</h4>
-                          <p className="text-sm">{formatCurrency(item.price)}</p>
-
-                          <button
-                            onClick={() =>
-                              addItem({
-                                id: item.id,
-                                name: item.name,
-                                price: item.price,
-                                restaurantId: selectedRestaurant.id,
-                                restaurantName: selectedRestaurant.name,
-                                image: item.image,
-                              })
-                            }
-                            className="mt-2 px-3 py-2 bg-foreground text-background rounded-lg"
-                          >
-                            Add to Cart
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-              </div>
-            </div>
-
-            {/* Input Bar (UI only, your real chat still works) */}
-            <div className="border-t p-4 bg-background">
-              <div className="max-w-3xl mx-auto flex gap-3">
-                <input
-                  placeholder="Ask for food..."
-                  className="flex-1 p-3 rounded-full border"
-                />
-                <button className="bg-blue-600 text-white px-4 rounded-full">
-                  ➤
+        <main className="mx-auto grid w-full max-w-6xl grid-cols-1 gap-8 p-6 lg:grid-cols-[1fr_360px]">
+          <section className="space-y-8">
+            <section className="rounded-xl border border-black/10 p-4 dark:border-white/20">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold">Your Recent Orders</h2>
+                <button
+                  onClick={async () => {
+                    if (!user) return;
+                    const response = await fetch(`/api/orders?userId=${encodeURIComponent(user.id)}`);
+                    const data = (await response.json()) as {
+                      orders?: Array<{ id: string; status: string; created_at?: string }>;
+                    };
+                    setOrders(Array.isArray(data.orders) ? data.orders : []);
+                  }}
+                  className="text-sm text-zinc-600 hover:underline"
+                >
+                  Refresh
                 </button>
               </div>
+              {loadingOrders ? (
+                <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">Loading orders...</p>
+              ) : orders.length === 0 ? (
+                <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">No orders yet.</p>
+              ) : (
+                <ul className="mt-3 space-y-2">
+                  {orders.slice(0, 3).map((order) => (
+                    <li
+                      key={order.id}
+                      className="flex items-center justify-between rounded-lg border border-black/10 p-2 text-sm dark:border-white/20"
+                    >
+                      <span>#{order.id.slice(0, 8)}</span>
+                      <span className="font-medium capitalize">{order.status.replace("_", " ")}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+
+            <OrderMessagePanel
+              title="Chat With Driver"
+              orderId={activeChatOrder?.id ?? null}
+              userId={user.id}
+              role="customer"
+            />
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              {restaurants.map((restaurant) => {
+                const isSelected = restaurant.id === selectedRestaurant.id;
+
+                return (
+                  <button
+                    key={restaurant.id}
+                    onClick={() => setSelectedRestaurantId(restaurant.id)}
+                    className={`overflow-hidden rounded-xl border text-left transition ${
+                      isSelected
+                        ? "border-foreground"
+                        : "border-black/10 dark:border-white/20"
+                    }`}
+                  >
+                    <Image
+                      src={restaurant.image}
+                      alt={restaurant.name}
+                      width={900}
+                      height={360}
+                      className="h-36 w-full object-cover"
+                    />
+                    <div className="space-y-1 p-4">
+                      <h2 className="font-semibold">{restaurant.name}</h2>
+                      <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                        {restaurant.cuisine} • {restaurant.eta}
+                      </p>
+                      <p className="text-sm">
+                        Delivery {formatCurrency(restaurant.deliveryFee)}
+                      </p>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
 
-          </div>
+            <section className="space-y-4">
+              <h3 className="text-xl font-semibold">{selectedRestaurant.name} Menu</h3>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                {loadingMenu ? (
+                  <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                    Loading menu...
+                  </p>
+                ) : selectedMenu.length === 0 ? (
+                  <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                    No menu items found for this restaurant.
+                  </p>
+                ) : (
+                  selectedMenu.map((item) => (
+                    <article
+                      key={item.id}
+                      className="rounded-xl border border-black/10 p-4 dark:border-white/20"
+                    >
+                      <Image
+                        src={item.image}
+                        alt={item.name}
+                        width={900}
+                        height={400}
+                        className="mb-3 h-40 w-full rounded-lg object-cover"
+                      />
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <h4 className="font-medium">{item.name}</h4>
+                          <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                            {formatCurrency(item.price)}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() =>
+                            addItem({
+                              id: `${selectedRestaurant.id}:${item.id}`,
+                              name: item.name,
+                              price: item.price,
+                              restaurantId: String(selectedRestaurant.id),
+                              restaurantName: selectedRestaurant.name,
+                              image: item.image,
+                            })
+                          }
+                          className="rounded-full border border-black/10 px-4 py-2 text-sm hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/10"
+                        >
+                          Add
+                        </button>
+                      </div>
+                    </article>
+                  ))
+                )}
+              </div>
+            </section>
+          </section>
 
+          <aside
+            className={`rounded-xl border border-black/10 p-4 dark:border-white/20 ${
+              isOpen ? "block" : "hidden lg:block"
+            }`}
+          >
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-lg font-semibold">Your Cart</h3>
+              {!!items.length && (
+                <button
+                  onClick={clearCart}
+                  className="text-sm text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+
+            {orderSuccess && (
+              <div className="mb-4 rounded-lg bg-green-100 p-3 text-sm text-green-800 dark:bg-green-900/30 dark:text-green-400">
+                ✓ Order placed successfully!
+              </div>
+            )}
+
+            {!items.length ? (
+              <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                No items yet. Add something tasty.
+              </p>
+            ) : (
+              <div className="space-y-4">
+                <ul className="space-y-3 max-h-64 overflow-y-auto">
+                  {items.map((item) => (
+                    <li key={item.id} className="rounded-lg border border-black/10 p-3 dark:border-white/20">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="font-medium">{item.name}</p>
+                          <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                            {formatCurrency(item.price)} each
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => removeItem(item.id)}
+                          className="text-xs text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                      <div className="mt-3 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => updateQuantity(item.id, item.quantity - 1)}
+                            className="h-7 w-7 rounded-full border border-black/10 text-sm dark:border-white/20"
+                          >
+                            -
+                          </button>
+                          <span className="text-sm">{item.quantity}</span>
+                          <button
+                            onClick={() => updateQuantity(item.id, item.quantity + 1)}
+                            className="h-7 w-7 rounded-full border border-black/10 text-sm dark:border-white/20"
+                          >
+                            +
+                          </button>
+                        </div>
+                        <p className="text-sm font-medium">
+                          {formatCurrency(item.price * item.quantity)}
+                        </p>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+
+                <div>
+                  <label className="mb-2 block text-sm font-medium">
+                    Delivery Address
+                  </label>
+                  <input
+                    type="text"
+                    value={deliveryAddress}
+                    onChange={(e) => setDeliveryAddress(e.target.value)}
+                    placeholder="Enter your delivery address"
+                    className="w-full rounded-lg border border-black/10 bg-transparent px-3 py-2 text-sm dark:border-white/20"
+                  />
+                </div>
+
+                <div className="space-y-1 border-t border-black/10 pt-3 text-sm dark:border-white/20">
+                  <div className="flex items-center justify-between">
+                    <span>Subtotal</span>
+                    <span>{formatCurrency(totalPrice)}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span>Delivery</span>
+                    <span>{formatCurrency(deliveryFee)}</span>
+                  </div>
+                  <div className="flex items-center justify-between pt-1 text-base font-semibold">
+                    <span>Total</span>
+                    <span>{formatCurrency(orderTotal)}</span>
+                  </div>
+                </div>
+
+                <button
+                  onClick={handleCheckout}
+                  disabled={isLoading || items.length === 0 || !deliveryAddress.trim()}
+                  className="w-full rounded-full bg-foreground px-4 py-3 text-sm font-semibold text-background hover:opacity-90 disabled:opacity-60"
+                >
+                  {isLoading ? "Processing..." : "Checkout"}
+                </button>
+              </div>
+            )}
+          </aside>
         </main>
       </div>
     </ChatKitWrapper>

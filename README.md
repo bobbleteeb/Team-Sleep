@@ -1,47 +1,65 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# QuickBite — Food Delivery App
 
 ![GitHub stars](https://img.shields.io/github/stars/bobbleteeb/Team-Sleep?style=social)
 ![GitHub forks](https://img.shields.io/github/forks/bobbleteeb/Team-Sleep?style=social)
 ![GitHub issues](https://img.shields.io/github/issues/bobbleteeb/Team-Sleep)
 ![Next.js](https://img.shields.io/badge/Next.js-16.1-black?logo=next.js)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue?logo=typescript)
-![Tailwind CSS](https://img.shields.io/badge/Tailwind-CSS-38bdf8?logo=tailwind-css)
+![Tailwind CSS](https://img.shields.io/badge/Tailwind-v4-38bdf8?logo=tailwind-css)
 
-## Team Sleep Project
+A full-stack food delivery app built with Next.js, Supabase, and OpenAI. Supports two roles — **customers** can browse nearby restaurants, place orders, and chat with drivers; **drivers** can accept deliveries, track earnings, and use an AI copilot to message customers.
 
-This is Team Sleep's main application built with Next.js, TypeScript, and Tailwind CSS.
+> **Status:** Work in progress
 
-## Getting Started
+---
 
-First, run the development server:
+## Running with Docker
+
+### 1. Set up environment variables
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+cp .env.example .env.local
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Fill in `.env.local` with your keys:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```env
+OPENAI_API_KEY=sk-proj-...
+OPENAI_MODEL=gpt-4
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+GOOGLE_MAPS_API_KEY=...
 
-## Learn More
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=...
+SUPABASE_SERVICE_ROLE_KEY=...
+```
 
-To learn more about Next.js, take a look at the following resources:
+### 2. Build the image
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+docker build \
+  --build-arg NEXT_PUBLIC_SUPABASE_URL=your_supabase_url \
+  --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key \
+  -t quickbite .
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### 3. Run the container
 
-## Deploy on Vercel
+```bash
+docker run -p 3000:3000 \
+  -e OPENAI_API_KEY=your_key \
+  -e GOOGLE_MAPS_API_KEY=your_key \
+  -e SUPABASE_SERVICE_ROLE_KEY=your_key \
+  quickbite
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Open [http://localhost:3000](http://localhost:3000).
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+---
+
+## Running locally (without Docker)
+
+```bash
+npm install
+npm run dev
+```

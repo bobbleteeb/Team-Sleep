@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "seed": "node scripts/seed-restaurants.js"
+    "seed": "node scripts/seed-restaurants.js",
+    "seed:orders": "node scripts/seed-orders.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.98.0",

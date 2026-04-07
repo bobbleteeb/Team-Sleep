@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || "",
-  process.env.SUPABASE_SERVICE_ROLE_KEY || ""
-);
+function getSupabase() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL || "",
+    process.env.SUPABASE_SERVICE_ROLE_KEY || ""
+  );
+}
 
 export interface RestaurantFromOSM {
   id: number;
@@ -52,7 +54,7 @@ async function fetchFromSupabase(): Promise<RestaurantFromOSM[] | null> {
     console.log("📦 Querying Supabase for real restaurants...");
 
     // Fetch all restaurants from Supabase
-    const { data: restaurants, error } = await supabase
+    const { data: restaurants, error } = await getSupabase()
       .from("restaurants")
       .select("*, menus(*)")
       .returns<Array<{
@@ -261,7 +263,7 @@ async function insertMenusForRestaurant(
 ): Promise<void> {
   const menuItems = generateMenuForCuisine(cuisine);
 
-  const { error: flatError } = await supabase.from("menus").insert(
+  const { error: flatError } = await getSupabase().from("menus").insert(
     menuItems.map((item) => ({
       restaurant_id: restaurantId,
       name: item.name,
@@ -271,7 +273,7 @@ async function insertMenusForRestaurant(
 
   if (!flatError) return;
 
-  await supabase.from("menus").insert({
+  await getSupabase().from("menus").insert({
     restaurant_id: restaurantId,
     items: menuItems.map((item) => ({
       id: item.id,
@@ -324,7 +326,7 @@ async function fetchFromGooglePlacesAndSave(
       return false;
     }
 
-    const { data: existingRows } = await supabase
+    const { data: existingRows } = await getSupabase()
       .from("restaurants")
       .select("id, name")
       .returns<Array<{ id: number | string; name: string }>>();
@@ -349,7 +351,7 @@ async function fetchFromGooglePlacesAndSave(
       }));
 
     if (toInsert.length > 0) {
-      const { error: insertError } = await supabase
+      const { error: insertError } = await getSupabase()
         .from("restaurants")
         .insert(toInsert);
 
@@ -364,7 +366,7 @@ async function fetchFromGooglePlacesAndSave(
 
     if (targetNames.length === 0) return false;
 
-    const { data: targetRestaurants, error: targetError } = await supabase
+    const { data: targetRestaurants, error: targetError } = await getSupabase()
       .from("restaurants")
       .select("id, name, cuisine")
       .in("name", targetNames)
@@ -375,7 +377,7 @@ async function fetchFromGooglePlacesAndSave(
     }
 
     const restaurantIds = targetRestaurants.map((r) => r.id);
-    const { data: existingMenus } = await supabase
+    const { data: existingMenus } = await getSupabase()
       .from("menus")
       .select("restaurant_id")
       .in("restaurant_id", restaurantIds)

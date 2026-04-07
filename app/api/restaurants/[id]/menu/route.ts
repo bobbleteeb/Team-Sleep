@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || "",
-  process.env.SUPABASE_SERVICE_ROLE_KEY || ""
-);
+function getSupabase() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL || "",
+    process.env.SUPABASE_SERVICE_ROLE_KEY || ""
+  );
+}
 
 type MenuItem = {
   id: number;
@@ -70,7 +72,7 @@ async function persistFallbackMenu(
   restaurantId: string,
   items: MenuItem[]
 ): Promise<void> {
-  const { error: flatError } = await supabase.from("menus").insert(
+  const { error: flatError } = await getSupabase().from("menus").insert(
     items.map((item) => ({
       restaurant_id: restaurantId,
       name: item.name,
@@ -80,7 +82,7 @@ async function persistFallbackMenu(
 
   if (!flatError) return;
 
-  await supabase.from("menus").insert({
+  await getSupabase().from("menus").insert({
     restaurant_id: restaurantId,
     items: items.map((item) => ({
       id: item.id,
@@ -97,7 +99,7 @@ export async function GET(
   try {
     const { id } = await context.params;
 
-    const { data: restaurant, error: restaurantError } = await supabase
+    const { data: restaurant, error: restaurantError } = await getSupabase()
       .from("restaurants")
       .select("id, cuisine")
       .eq("id", id)
@@ -107,7 +109,7 @@ export async function GET(
       return NextResponse.json({ error: "Restaurant not found" }, { status: 404 });
     }
 
-    const { data: menuRows, error: menuError } = await supabase
+    const { data: menuRows, error: menuError } = await getSupabase()
       .from("menus")
       .select("*")
       .eq("restaurant_id", id);

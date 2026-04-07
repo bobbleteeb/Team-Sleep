@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -65,332 +66,97 @@ function formatDuration(ms: number): string {
   return `${hours}h ${minutes}m`;
 }
 
+type Order = {
+  id: number;
+  restaurant: string;
+  distance: string;
+  payout: string;
+};
+
+const RESTAURANTS = [
+  "McDonald's",
+  "Chipotle",
+  "Wendy's",
+  "Subway",
+  "Chick-fil-A",
+];
+
+function generateFakeOrder(id: number): Order {
+  return {
+    id,
+    restaurant:
+      RESTAURANTS[Math.floor(Math.random() * RESTAURANTS.length)],
+    distance: (Math.random() * 3 + 0.5).toFixed(1),
+    payout: (Math.random() * 10 + 5).toFixed(2),
+  };
+}
+
 export default function DriverDashboard() {
   const { user, logout } = useAuth();
   const router = useRouter();
 
-  const [orders, setOrders] = useState<DriverOrder[]>([]);
-  const [activeOrder, setActiveOrder] = useState<DriverOrder | null>(null);
-  const [driver, setDriver] = useState<DriverProfile | null>(null);
-  const [stats, setStats] = useState<DriverStats>({
-    todayEarnings: 0,
-    totalEarnings: 0,
-    completedDeliveries: 0,
-    activeDeliveries: 0,
-  });
-  const [canAccept, setCanAccept] = useState(true);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [accepting, setAccepting] = useState<Record<string, boolean>>({});
-  const [updatingStatus, setUpdatingStatus] = useState(false);
-  const [dismissedOrders, setDismissedOrders] = useState<string[]>([]);
+  const [isOnline, setIsOnline] = useState<boolean>(true);
 
-  const [vehicleInfo, setVehicleInfo] = useState("");
-  const [licenseNumber, setLicenseNumber] = useState("");
-  const [savingProfile, setSavingProfile] = useState(false);
-
-  const [shiftStartedAt, setShiftStartedAt] = useState<number | null>(null);
-  const [now, setNow] = useState(Date.now());
-
-  const [proofNote, setProofNote] = useState("");
-  const [proofPhotoUrl, setProofPhotoUrl] = useState("");
-
-  const [copilotText, setCopilotText] = useState("");
-  const [copilotPrompt, setCopilotPrompt] = useState("");
-  const [copilotLoading, setCopilotLoading] = useState(false);
-  const [copilotError, setCopilotError] = useState<string | null>(null);
-
-  const shiftStorageKey = `driverShiftStart:${user?.id ?? "unknown"}`;
-
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 30000);
-    return () => clearInterval(id);
-  }, []);
-
-  useEffect(() => {
-    if (!user) return;
-    const raw = localStorage.getItem(shiftStorageKey);
-    if (!raw) return;
-    const parsed = Number(raw);
-    if (Number.isFinite(parsed) && parsed > 0) {
-      setShiftStartedAt(parsed);
-    }
-  }, [shiftStorageKey, user]);
-
-  const fetchOrders = useCallback(async () => {
-    if (!user) return;
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      const res = await fetch(`/api/driver/orders?driverId=${encodeURIComponent(user.id)}`);
-      const data = (await res.json()) as DriverOrdersResponse;
-
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to fetch driver orders");
-      }
-
-      const fetchedOrders = Array.isArray(data.orders) ? data.orders : [];
-      setOrders(fetchedOrders);
-      setActiveOrder(data.activeOrder ?? null);
-      setDriver(data.driver ?? null);
-      setStats(
-        data.stats ?? {
-          todayEarnings: 0,
-          totalEarnings: 0,
-          completedDeliveries: 0,
-          activeDeliveries: 0,
-        }
-      );
-      setCanAccept(Boolean(data.canAccept));
-
-      if (data.driver) {
-        setVehicleInfo(data.driver.vehicle_info ?? "");
-        setLicenseNumber(data.driver.license_number ?? "");
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to fetch orders");
-    } finally {
-      setLoading(false);
-    }
-  }, [user]);
-
-  useEffect(() => {
-    fetchOrders();
-  }, [fetchOrders]);
+  const [orders, setOrders] = useState<Order[]>([]);
 
   const handleLogout = () => {
     logout();
     router.push("/login");
   };
 
-  const toggleOnline = async () => {
-    if (!user || !driver) return;
+  useEffect(() => {
+    if (!isOnline) return;
 
-    const goOnline = driver.status === "offline";
+    let orderId = 1;
 
-    setSavingProfile(true);
-    setError(null);
+    const interval = setInterval(() => {
+      const newOrder = generateFakeOrder(orderId++);
 
-    try {
-      const res = await fetch("/api/driver/profile", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          driverId: user.id,
-          online: goOnline,
-        }),
-      });
-      const data = (await res.json()) as { error?: string };
+      setOrders((prev) => [newOrder, ...prev].slice(0, 5)); // limit to 5
 
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to update online status");
-      }
+      setTimeout(() => {
+        setOrders((prev) => prev.filter((o) => o.id !== newOrder.id));
+      }, 15000);
+    }, 5000);
 
-      await fetchOrders();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to update online status");
-    } finally {
-      setSavingProfile(false);
-    }
+    return () => clearInterval(interval);
+  }, [isOnline]);
+
+  const acceptOrder = (id: number) => {
+    setOrders((prev) => prev.filter((o) => o.id !== id));
   };
 
-  const saveProfile = async () => {
-    if (!user) return;
-
-    setSavingProfile(true);
-    setError(null);
-
-    try {
-      const res = await fetch("/api/driver/profile", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          driverId: user.id,
-          vehicleInfo,
-          licenseNumber,
-        }),
-      });
-      const data = (await res.json()) as { error?: string };
-
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to save profile");
-      }
-
-      await fetchOrders();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save profile");
-    } finally {
-      setSavingProfile(false);
-    }
-  };
-
-  const startShift = () => {
-    const startedAt = Date.now();
-    setShiftStartedAt(startedAt);
-    localStorage.setItem(shiftStorageKey, String(startedAt));
-  };
-
-  const endShift = () => {
-    setShiftStartedAt(null);
-    localStorage.removeItem(shiftStorageKey);
-  };
-
-  const acceptOrder = async (orderId: string) => {
-    if (!user || accepting[orderId] || !canAccept) return;
-
-    setAccepting((prev) => ({ ...prev, [orderId]: true }));
-
-    try {
-      const res = await fetch("/api/driver/orders", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orderId, driverId: user.id }),
-      });
-      const data = (await res.json()) as { error?: string };
-
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to accept order");
-      }
-
-      await fetchOrders();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Could not accept order");
-    } finally {
-      setAccepting((prev) => ({ ...prev, [orderId]: false }));
-    }
-  };
-
-  const declineOrder = (orderId: string) => {
-    setDismissedOrders((prev) => (prev.includes(orderId) ? prev : [...prev, orderId]));
-  };
-
-  const updateActiveOrderStatus = async (status: "in_transit" | "delivered" | "cancelled") => {
-    if (!user || !activeOrder || updatingStatus) return;
-
-    if (status === "delivered" && !proofNote.trim() && !proofPhotoUrl.trim()) {
-      alert("Add at least a proof note or proof photo URL before completing dropoff.");
-      return;
-    }
-
-    setUpdatingStatus(true);
-
-    try {
-      const res = await fetch("/api/driver/orders", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          orderId: activeOrder.id,
-          driverId: user.id,
-          status,
-          proofNote,
-          proofPhotoUrl,
-        }),
-      });
-
-      const data = (await res.json()) as { error?: string };
-
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to update order status");
-      }
-
-      if (status === "delivered") {
-        setProofNote("");
-        setProofPhotoUrl("");
-      }
-
-      await fetchOrders();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Could not update order status");
-    } finally {
-      setUpdatingStatus(false);
-    }
-  };
-
-  const generateDriverMessage = async (intent: DriverCopilotIntent) => {
-    if (!activeOrder && intent !== "custom") {
-      setCopilotError("Accept an order first to generate this type of message.");
-      return;
-    }
-
-    setCopilotLoading(true);
-    setCopilotError(null);
-
-    try {
-      const res = await fetch("/api/driver/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          intent,
-          driverName: user?.name,
-          customPrompt: copilotPrompt,
-          activeOrder,
-        }),
-      });
-
-      const data = (await res.json()) as { message?: string; error?: string };
-
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to generate message");
-      }
-
-      setCopilotText(data.message || "");
-    } catch (err) {
-      setCopilotError(err instanceof Error ? err.message : "Failed to generate message");
-    } finally {
-      setCopilotLoading(false);
-    }
-  };
-
-  const copyCopilotText = async () => {
-    if (!copilotText) return;
-
-    try {
-      await navigator.clipboard.writeText(copilotText);
-    } catch {
-      setCopilotError("Could not copy message automatically. Please copy manually.");
-    }
-  };
-
-  const displayedOrders = useMemo(
-    () => orders.filter((order) => !dismissedOrders.includes(order.id)),
-    [dismissedOrders, orders]
-  );
-
-  if (user?.role !== "driver") {
-    return null;
-  }
+  if (user?.role !== "driver") return null;
 
   const isOnline = driver?.status !== "offline";
   const shiftDuration = shiftStartedAt ? formatDuration(now - shiftStartedAt) : "Not started";
 
   return (
-    <div className="min-h-screen bg-background">
-      <header className="border-b border-black/10 p-6 dark:border-white/20">
-        <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4">
+    <div className="min-h-screen bg-background pb-20">
+      {/* HEADER */}
+      <header className="border-b border-black/10 p-4 dark:border-white/20">
+        <div className="mx-auto flex w-full max-w-6xl items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold">QuickBite Driver</h1>
-            <p className="text-sm text-zinc-600 dark:text-zinc-400">Welcome, {user.name}</p>
+            <h1 className="text-xl font-bold">QuickByte</h1>
+            <p className="text-sm text-zinc-500">Driver Mode</p>
           </div>
+
           <div className="flex items-center gap-3">
-            <button onClick={fetchOrders} className="text-sm text-zinc-600 hover:underline">
-              Refresh
-            </button>
+            {/* STATUS TOGGLE */}
             <button
-              onClick={toggleOnline}
-              disabled={savingProfile}
-              className={`rounded-full px-4 py-2 text-sm font-medium ${
+              onClick={() => setIsOnline(!isOnline)}
+              className={`rounded-full px-5 py-2 text-sm font-semibold text-white shadow-md transition ${
                 isOnline
-                  ? "bg-green-600 text-white"
-                  : "bg-zinc-700 text-white"
-              } disabled:opacity-60`}
+                  ? "bg-green-600 hover:bg-green-700"
+                  : "bg-zinc-400 hover:bg-zinc-500"
+              }`}
             >
-              {isOnline ? "Go Offline" : "Go Online"}
+              {isOnline ? "Online" : "Offline"}
             </button>
+
             <button
               onClick={handleLogout}
-              className="rounded-full border border-black/10 px-4 py-2 text-sm font-medium hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/10"
+              className="rounded-full border px-3 py-2 text-sm hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/10"
             >
               Logout
             </button>
@@ -398,199 +164,73 @@ export default function DriverDashboard() {
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-6xl space-y-8 p-6">
-        {error && <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-700">{error}</div>}
+      {/* MAIN */}
+      <main className="mx-auto w-full max-w-6xl space-y-6 p-4">
+        {/* MAP PLACEHOLDER */}
+        <div className="h-48 rounded-2xl bg-zinc-200 dark:bg-zinc-800 flex items-center justify-center">
+          <p className="text-sm text-zinc-500">Map View (Coming Soon)</p>
+        </div>
 
-        <section className="grid grid-cols-1 gap-4 md:grid-cols-4">
-          <div className="rounded-xl border border-black/10 p-4 dark:border-white/20">
-            <p className="text-sm text-zinc-500">Today Earnings</p>
-            <p className="text-2xl font-semibold">{formatCurrency(stats.todayEarnings)}</p>
-          </div>
-          <div className="rounded-xl border border-black/10 p-4 dark:border-white/20">
-            <p className="text-sm text-zinc-500">Total Earnings</p>
-            <p className="text-2xl font-semibold">{formatCurrency(stats.totalEarnings)}</p>
-          </div>
-          <div className="rounded-xl border border-black/10 p-4 dark:border-white/20">
-            <p className="text-sm text-zinc-500">Completed</p>
-            <p className="text-2xl font-semibold">{stats.completedDeliveries}</p>
-          </div>
-          <div className="rounded-xl border border-black/10 p-4 dark:border-white/20">
-            <p className="text-sm text-zinc-500">Rating</p>
-            <p className="text-2xl font-semibold">{Number(driver?.rating ?? 5).toFixed(1)} ⭐</p>
-          </div>
-        </section>
+        {/* AVAILABLE DELIVERIES */}
+        <section className="space-y-3">
+          <h2 className="text-lg font-semibold">Available Deliveries</h2>
 
-        <section className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <div className="space-y-3 rounded-xl border border-black/10 p-4 dark:border-white/20">
-            <h2 className="text-lg font-semibold">Vehicle / Profile Setup</h2>
-            <input
-              value={vehicleInfo}
-              onChange={(e) => setVehicleInfo(e.target.value)}
-              placeholder="Vehicle info (e.g., Toyota Prius - Blue)"
-              className="w-full rounded-lg border border-black/10 bg-transparent px-3 py-2 text-sm dark:border-white/20"
-            />
-            <input
-              value={licenseNumber}
-              onChange={(e) => setLicenseNumber(e.target.value)}
-              placeholder="License number"
-              className="w-full rounded-lg border border-black/10 bg-transparent px-3 py-2 text-sm dark:border-white/20"
-            />
-            <button
-              onClick={saveProfile}
-              disabled={savingProfile}
-              className="rounded bg-foreground px-3 py-2 text-sm font-medium text-background disabled:opacity-60"
-            >
-              {savingProfile ? "Saving..." : "Save Profile"}
-            </button>
-          </div>
-
-          <div className="space-y-3 rounded-xl border border-black/10 p-4 dark:border-white/20">
-            <h2 className="text-lg font-semibold">Shift</h2>
-            <p className="text-sm text-zinc-600 dark:text-zinc-400">Current shift: {shiftDuration}</p>
-            <div className="flex gap-2">
-              <button
-                onClick={startShift}
-                disabled={Boolean(shiftStartedAt)}
-                className="rounded border border-black/10 px-3 py-2 text-sm hover:bg-black/5 disabled:opacity-60 dark:border-white/20 dark:hover:bg-white/10"
-              >
-                Start Shift
-              </button>
-              <button
-                onClick={endShift}
-                disabled={!shiftStartedAt}
-                className="rounded border border-black/10 px-3 py-2 text-sm hover:bg-black/5 disabled:opacity-60 dark:border-white/20 dark:hover:bg-white/10"
-              >
-                End Shift
-              </button>
-            </div>
-          </div>
-        </section>
-
-        <section className="space-y-4 rounded-xl border border-black/10 p-4 dark:border-white/20">
-          <h2 className="text-xl font-semibold">Current Delivery</h2>
-          {!activeOrder ? (
-            <p className="text-sm text-zinc-600 dark:text-zinc-400">No active delivery. Accept an order below.</p>
-          ) : (
-            <div className="space-y-3">
-              <p className="text-sm text-zinc-600 dark:text-zinc-400">Order #{activeOrder.id}</p>
-              <p className="font-medium">Deliver to: {activeOrder.delivery_address}</p>
-              <p className="text-sm text-zinc-500">Status: {activeOrder.status ?? "confirmed"}</p>
-              <p className="text-sm text-zinc-500">Total: {formatCurrency(activeOrder.total_price)}</p>
-              <ul className="list-disc pl-5 text-sm text-zinc-700">
-                {activeOrder.items?.map((it, idx) => (
-                  <li key={`${activeOrder.id}-${idx}`}>
-                    {it.qty ?? it.quantity ?? 1} x {it.name}
-                  </li>
-                ))}
-              </ul>
-
-              <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-                <input
-                  value={proofNote}
-                  onChange={(e) => setProofNote(e.target.value)}
-                  placeholder="Proof note (e.g., left at front door)"
-                  className="rounded-lg border border-black/10 bg-transparent px-3 py-2 text-sm dark:border-white/20"
-                />
-                <input
-                  value={proofPhotoUrl}
-                  onChange={(e) => setProofPhotoUrl(e.target.value)}
-                  placeholder="Proof photo URL (optional for demo)"
-                  className="rounded-lg border border-black/10 bg-transparent px-3 py-2 text-sm dark:border-white/20"
-                />
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  onClick={() => updateActiveOrderStatus("in_transit")}
-                  disabled={updatingStatus || activeOrder.status === "in_transit"}
-                  className="rounded border border-black/10 px-3 py-1 text-sm hover:bg-black/5 disabled:opacity-60 dark:border-white/20 dark:hover:bg-white/10"
-                >
-                  Confirm Pickup
-                </button>
-                <button
-                  onClick={() => updateActiveOrderStatus("delivered")}
-                  disabled={updatingStatus}
-                  className="rounded bg-foreground px-3 py-1 text-sm font-medium text-background disabled:opacity-60"
-                >
-                  Confirm Dropoff
-                </button>
-                <button
-                  onClick={() => updateActiveOrderStatus("cancelled")}
-                  disabled={updatingStatus}
-                  className="rounded border border-red-300 px-3 py-1 text-sm text-red-700 hover:bg-red-50 disabled:opacity-60"
-                >
-                  Report Issue / Cancel
-                </button>
-              </div>
+          {!isOnline && (
+            <div className="rounded-xl border p-6 text-center text-zinc-500">
+              You are offline. Go online to receive deliveries.
             </div>
           )}
+
+          {isOnline && orders.length === 0 && (
+            <div className="text-sm text-zinc-500">
+              Waiting for new orders...
+            </div>
+          )}
+
+          <div className="space-y-3">
+            {orders.map((order) => (
+              <div
+                key={order.id}
+                className="rounded-2xl border border-black/10 p-4 shadow-sm transition hover:shadow-md hover:scale-[1.01] animate-in fade-in slide-in-from-bottom-2"
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-semibold">{order.restaurant}</p>
+                    <p className="text-sm text-zinc-500">
+                      {order.distance} miles • ${order.payout}
+                    </p>
+                  </div>
+
+                  <button
+                    onClick={() => acceptOrder(order.id)}
+                    className="rounded-full bg-black px-4 py-2 text-sm text-white"
+                  >
+                    Accept
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
         </section>
 
-        <OrderMessagePanel
-          title="Customer Chat"
-          orderId={activeOrder?.id ?? null}
-          userId={user.id}
-          role="driver"
-        />
+        {/* EARNINGS */}
+        <section className="space-y-3">
+          <h2 className="text-lg font-semibold">Earnings</h2>
 
-        <section className="space-y-4 rounded-xl border border-black/10 p-4 dark:border-white/20">
-          <h2 className="text-xl font-semibold">Driver Copilot</h2>
-          <p className="text-sm text-zinc-600 dark:text-zinc-400">
-            Generate ready-to-send customer updates with one tap.
-          </p>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="rounded-2xl bg-black p-4 text-white">
+              <p className="text-sm opacity-70">Today</p>
+              <p className="text-2xl font-bold">$0.00</p>
+            </div>
 
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={() => generateDriverMessage("eta_update")}
-              disabled={copilotLoading}
-              className="rounded border border-black/10 px-3 py-1 text-sm hover:bg-black/5 disabled:opacity-60 dark:border-white/20 dark:hover:bg-white/10"
-            >
-              ETA Update
-            </button>
-            <button
-              onClick={() => generateDriverMessage("arrival_message")}
-              disabled={copilotLoading}
-              className="rounded border border-black/10 px-3 py-1 text-sm hover:bg-black/5 disabled:opacity-60 dark:border-white/20 dark:hover:bg-white/10"
-            >
-              Arrival Message
-            </button>
-            <button
-              onClick={() => generateDriverMessage("cannot_reach_customer")}
-              disabled={copilotLoading}
-              className="rounded border border-black/10 px-3 py-1 text-sm hover:bg-black/5 disabled:opacity-60 dark:border-white/20 dark:hover:bg-white/10"
-            >
-              Cannot Reach Customer
-            </button>
-            <button
-              onClick={() => generateDriverMessage("delay_notice")}
-              disabled={copilotLoading}
-              className="rounded border border-black/10 px-3 py-1 text-sm hover:bg-black/5 disabled:opacity-60 dark:border-white/20 dark:hover:bg-white/10"
-            >
-              Delay Notice
-            </button>
-          </div>
+            <div className="rounded-2xl border border-black/10 p-4">
+              <p className="text-sm text-zinc-500">This Week</p>
+              <p className="text-2xl font-bold">$0.00</p>
+            </div>
 
-          <div className="space-y-2">
-            <label className="block text-sm font-medium">Custom Request</label>
-            <textarea
-              value={copilotPrompt}
-              onChange={(e) => setCopilotPrompt(e.target.value)}
-              rows={3}
-              placeholder="Example: Ask customer for gate code and mention I am 8 minutes away"
-              className="w-full rounded-lg border border-black/10 bg-transparent px-3 py-2 text-sm dark:border-white/20"
-            />
-            <button
-              onClick={() => generateDriverMessage("custom")}
-              disabled={copilotLoading || !copilotPrompt.trim()}
-              className="rounded bg-foreground px-3 py-1 text-sm font-medium text-background disabled:opacity-60"
-            >
-              {copilotLoading ? "Generating..." : "Generate Custom Message"}
-            </button>
-          </div>
-
-          {copilotError && (
-            <div className="rounded-lg border border-red-200 bg-red-50 p-2 text-sm text-red-700">
-              {copilotError}
+            <div className="rounded-2xl border border-black/10 p-4 col-span-2">
+              <p className="text-sm text-zinc-500">Rating</p>
+              <p className="text-xl font-bold">5.0 ⭐</p>
             </div>
           )}
 
@@ -663,6 +303,15 @@ export default function DriverDashboard() {
           )}
         </section>
       </main>
+
+      {/* BOTTOM NAV */}
+      <nav className="fixed bottom-0 left-0 right-0 border-t border-black/10 bg-white p-3 dark:border-white/20 dark:bg-black">
+        <div className="mx-auto flex max-w-6xl justify-around text-sm">
+          <button className="font-medium">Home</button>
+          <button className="text-zinc-500">Earnings</button>
+          <button className="text-zinc-500">Profile</button>
+        </div>
+      </nav>
     </div>
   );
 }

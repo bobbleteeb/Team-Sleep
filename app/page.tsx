@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useMemo, useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import DriverDashboard from "./components/DriverDashboard";
@@ -681,30 +682,30 @@ export default function Home() {
               ))}
             </div>
             <div className="mt-4 space-y-2 border-t border-orange-200 dark:border-orange-900/20 pt-4">
-              <a
+              <Link
                 href="/orders/history"
                 className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-sm font-medium hover:bg-gradient-to-r hover:from-orange-100 hover:to-red-100 dark:hover:from-orange-900/30 dark:hover:to-red-900/30 transition-all"
               >
                 🧾 Order History
-              </a>
-              <a
+              </Link>
+              <Link
                 href="/rewards"
                 className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-sm font-medium hover:bg-gradient-to-r hover:from-orange-100 hover:to-red-100 dark:hover:from-orange-900/30 dark:hover:to-red-900/30 transition-all"
               >
                 🏆 Rewards
-              </a>
-              <a
+              </Link>
+              <Link
                 href="/deals"
                 className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-sm font-medium hover:bg-gradient-to-r hover:from-orange-100 hover:to-red-100 dark:hover:from-orange-900/30 dark:hover:to-red-900/30 transition-all"
               >
                 🎟 Deals
-              </a>
-              <a
+              </Link>
+              <Link
                 href="/profile"
                 className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-sm font-medium hover:bg-gradient-to-r hover:from-orange-100 hover:to-red-100 dark:hover:from-orange-900/30 dark:hover:to-red-900/30 transition-all"
               >
                 ⚙️ Settings
-              </a>
+              </Link>
             </div>
           </div>
         </aside>
@@ -793,20 +794,20 @@ export default function Home() {
                               "ready",
                               "in_transit",
                             ].includes(order.status) && (
-                              <a
+                              <Link
                                 href={`/orders/${order.id}`}
                                 className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700 dark:border-blue-900/30 dark:bg-blue-900/20 dark:text-blue-300"
                               >
                                 📍 Track Order
-                              </a>
+                              </Link>
                             )}
                             {order.status === "delivered" && (
-                              <a
+                              <Link
                                 href="/orders/history"
                                 className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-700 dark:border-amber-900/30 dark:bg-amber-900/20 dark:text-amber-300"
                               >
                                 ⭐ Rate
-                              </a>
+                              </Link>
                             )}
                             <button
                               onClick={() => reorder(order)}

@@ -647,7 +647,7 @@ export default function Home() {
         </div>
       </header>
 
-      <main className="flex min-h-[calc(100vh-73px)]">
+      <main className="flex h-[calc(100vh-73px)] overflow-hidden">
         {/* ── Sidebar ── */}
         <aside className="hidden w-56 shrink-0 flex-col border-r border-orange-200 dark:border-orange-900/20 bg-gradient-to-b from-white via-orange-50/50 to-white dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 md:flex shadow-lg">
           <div className="p-6">
@@ -962,7 +962,7 @@ export default function Home() {
                   </h2>
 
                   {/* Chat messages */}
-                  <div className="space-y-4">
+                  <div className="max-h-[50vh] space-y-4 overflow-y-auto pr-1">
                     {chatMessages.map((msg) => (
                       <div
                         key={msg.id}

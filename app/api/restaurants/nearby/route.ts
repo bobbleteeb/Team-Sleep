@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { getRestaurantImage, getMenuItemImage } from "@/app/lib/imageMapping";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL || "",
@@ -26,14 +27,14 @@ export interface RestaurantFromOSM {
   image: string;
 }
 
-// Haversine formula to calculate distance between two points
+// Haversine formula to calculate distance between two points in MILES
 function calculateDistance(
   lat1: number,
   lon1: number,
   lat2: number,
   lon2: number
 ): number {
-  const R = 6371; // Earth's radius in km
+  const R = 3959; // Earth's radius in MILES (was 6371 km)
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
   const dLon = ((lon2 - lon1) * Math.PI) / 180;
   const a =
@@ -95,7 +96,7 @@ async function fetchFromSupabase(): Promise<RestaurantFromOSM[] | null> {
                 id: m.id || mIdx + 1,
                 name: m.name,
                 price: Number.isFinite(parsedPrice) ? parsedPrice : 0,
-                image: `https://picsum.photos/seed/menu-${r.id}-${mIdx + 1}/500/500`,
+                image: getMenuItemImage(m.name, r.cuisine || "Restaurant"),
               },
             ];
           }
@@ -109,7 +110,7 @@ async function fetchFromSupabase(): Promise<RestaurantFromOSM[] | null> {
                   id: item.id || itemIdx + 1,
                   name: item.name as string,
                   price: Number.isFinite(parsedPrice) ? parsedPrice : 0,
-                  image: `https://picsum.photos/seed/menu-${r.id}-${itemIdx + 1}/500/500`,
+                  image: getMenuItemImage(item.name as string, r.cuisine || "Restaurant"),
                 };
               });
           }
@@ -129,7 +130,7 @@ async function fetchFromSupabase(): Promise<RestaurantFromOSM[] | null> {
         menu: normalizedMenu,
         deliveryFee: 3.99 + (idx % 3) * 0.5,
         eta: `${15 + (idx % 20)} mins`,
-        image: `https://picsum.photos/seed/restaurant-${r.id}/900/400`,
+        image: getRestaurantImage(r.name, r.cuisine || "Restaurant"),
       };
     });
 
@@ -159,6 +160,54 @@ const cuisineMap: { [key: string]: string } = {
   korean: "Korean",
   vietnamese: "Vietnamese",
   french: "French",
+  somali: "Somali",
+  ethiopian: "Ethiopian",
+  greek: "Greek",
+  turkish: "Turkish",
+  spanish: "Spanish",
+  portuguese: "Portuguese",
+  brazilian: "Brazilian",
+  argentinian: "Argentinian",
+  peruvian: "Peruvian",
+  lebanese: "Lebanese",
+  moroccan: "Moroccan",
+  jewish: "Jewish",
+  israeli: "Israeli",
+  afghan: "Afghan",
+  pakistani: "Pakistani",
+  bangladeshi: "Bangladeshi",
+  sri_lankan: "Sri Lankan",
+  burmese: "Burmese",
+  laotian: "Laotian",
+  cambodian: "Cambodian",
+  indonesian: "Indonesian",
+  malaysian: "Malaysian",
+  singaporean: "Singaporean",
+  american: "American",
+  british: "British",
+  irish: "Irish",
+  scandinavian: "Scandinavian",
+  german: "German",
+  austrian: "Austrian",
+  swiss: "Swiss",
+  dutch: "Dutch",
+  belgian: "Belgian",
+  polish: "Polish",
+  czech: "Czech",
+  hungarian: "Hungarian",
+  romanian: "Romanian",
+  russian: "Russian",
+  ukrainian: "Ukrainian",
+  belarusian: "Belarusian",
+  italian: "Italian",
+  cypriot: "Cypriot",
+  croatian: "Croatian",
+  serbian: "Serbian",
+  bosnian: "Bosnian",
+  albanian: "Albanian",
+  maltese: "Maltese",
+  bulgarian: "Bulgarian",
+  macedonian: "Macedonian",
 };
 
 // Generate menu items based on cuisine type
@@ -217,14 +266,130 @@ function generateMenuForCuisine(cuisine: string): Array<{
       { name: "Brisket Sandwich", price: 14.99 },
       { name: "Smoked Chicken", price: 12.99 },
     ],
+    Somali: [
+      { name: "Camel Meat Stew", price: 14.99 },
+      { name: "Sambusas (Beef)", price: 7.99 },
+      { name: "Canjeero Bread", price: 3.99 },
+      { name: "Xalwo (Sesame Brittle)", price: 5.99 },
+      { name: "Shaah (Somali Tea)", price: 3.99 },
+      { name: "Bariis Iyo Hilib (Rice & Meat)", price: 12.99 },
+    ],
+    Ethiopian: [
+      { name: "Injera Platter", price: 13.99 },
+      { name: "Doro Wat (Chicken Stew)", price: 12.99 },
+      { name: "Misir Wat (Red Lentil)", price: 10.99 },
+      { name: "Gomen (Collard Greens)", price: 9.99 },
+    ],
+    Greek: [
+      { name: "Moussaka", price: 13.99 },
+      { name: "Souvlaki", price: 12.99 },
+      { name: "Greek Salad", price: 10.99 },
+      { name: "Spanakopita", price: 11.99 },
+    ],
+    Turkish: [
+      { name: "Kebab Plate", price: 13.99 },
+      { name: "Pide", price: 11.99 },
+      { name: "Hummus", price: 8.99 },
+      { name: "Baklava", price: 6.99 },
+    ],
+    Spanish: [
+      { name: "Paella", price: 14.99 },
+      { name: "Tapas Platter", price: 12.99 },
+      { name: "Gazpacho", price: 9.99 },
+      { name: "Jamón Ibérico", price: 15.99 },
+    ],
+    Portuguese: [
+      { name: "Bacalao à Brás", price: 13.99 },
+      { name: "Caldo Verde", price: 9.99 },
+      { name: "Pastéis de Nata", price: 7.99 },
+      { name: "Sardines Grilled", price: 12.99 },
+    ],
+    Brazilian: [
+      { name: "Feijoada", price: 13.99 },
+      { name: "Pão de Queijo", price: 8.99 },
+      { name: "Acarajé", price: 10.99 },
+      { name: "Brigadeiro", price: 5.99 },
+    ],
+    Korean: [
+      { name: "Bibimbap", price: 12.99 },
+      { name: "Korean BBQ", price: 15.99 },
+      { name: "Kimchi Jjigae", price: 11.99 },
+      { name: "Hotteok", price: 8.99 },
+    ],
+    Vietnamese: [
+      { name: "Pho", price: 11.99 },
+      { name: "Banh Mi", price: 9.99 },
+      { name: "Spring Rolls", price: 8.99 },
+      { name: "Bun Cha", price: 11.99 },
+    ],
+    Lebanese: [
+      { name: "Shawarma", price: 12.99 },
+      { name: "Fattoush Salad", price: 10.99 },
+      { name: "Kibbeh", price: 11.99 },
+      { name: "Hummus", price: 8.99 },
+    ],
+    Moroccan: [
+      { name: "Tagine", price: 13.99 },
+      { name: "Couscous", price: 11.99 },
+      { name: "Harira Soup", price: 9.99 },
+      { name: "Pastilla", price: 12.99 },
+    ],
+    Pakistani: [
+      { name: "Biryani", price: 12.99 },
+      { name: "Karahi", price: 12.99 },
+      { name: "Samosa", price: 7.99 },
+      { name: "Naan", price: 4.99 },
+    ],
+    Bangladeshi: [
+      { name: "Biryani", price: 11.99 },
+      { name: "Curry Rice", price: 10.99 },
+      { name: "Shingara", price: 7.99 },
+      { name: "Fuchka", price: 6.99 },
+    ],
+    "Sri Lankan": [
+      { name: "Curry & Rice", price: 11.99 },
+      { name: "Kottu Roti", price: 10.99 },
+      { name: "Lamprais", price: 12.99 },
+      { name: "Hoppers", price: 9.99 },
+    ],
+    American: [
+      { name: "Classic Burger", price: 10.99 },
+      { name: "Chicken Wings", price: 11.99 },
+      { name: "BBQ Ribs", price: 14.99 },
+      { name: "Mac & Cheese", price: 10.99 },
+    ],
+    Seafood: [
+      { name: "Grilled Salmon", price: 16.99 },
+      { name: "Shrimp Scampi", price: 14.99 },
+      { name: "Fish & Chips", price: 12.99 },
+      { name: "Lobster Roll", price: 15.99 },
+    ],
+    Vegan: [
+      { name: "Buddha Bowl", price: 11.99 },
+      { name: "Veggie Burger", price: 10.99 },
+      { name: "Chickpea Curry", price: 10.99 },
+      { name: "Kale Salad", price: 9.99 },
+    ],
+    "Middle Eastern": [
+      { name: "Hummus", price: 8.99 },
+      { name: "Falafel", price: 9.99 },
+      { name: "Shawarma", price: 12.99 },
+      { name: "Tabbouleh", price: 10.99 },
+    ],
+    French: [
+      { name: "Coq au Vin", price: 15.99 },
+      { name: "Beef Bourguignon", price: 16.99 },
+      { name: "Ratatouille", price: 12.99 },
+      { name: "Crème Brûlée", price: 8.99 },
+    ],
   };
 
-  const menuItems = menus[cuisine] || menus["Burger"];
+  const menuItems = menus[cuisine] || menus["Restaurant"] || menus["American"];
   return menuItems.map((item, idx) => ({
     id: idx + 1,
     name: item.name,
     price: item.price,
-    image: `https://images.unsplash.com/photo-${1000000 + idx}?w=500&h=500&fit=crop`,
+    image: getMenuItemImage(item.name, cuisine),
   }));
 }
 
@@ -333,22 +498,40 @@ async function fetchFromGooglePlacesAndSave(
       (existingRows || []).map((r) => [r.name.toLowerCase(), r.id])
     );
 
-    const toInsert = results
-      .filter((place) => !existingByName.has((place.name || "").toLowerCase()))
-      .map((place, idx) => ({
-        name: place.name as string,
-        cuisine: normalizeCuisineFromGoogleTypes(place.types),
-        address: place.vicinity || "",
-        phone: null as string | null,
-        website: null as string | null,
-        latitude: place.geometry?.location?.lat as number,
-        longitude: place.geometry?.location?.lng as number,
-        delivery_fee: 3.99 + (idx % 3) * 0.5,
-        eta: `${20 + (idx % 15)} mins`,
-        image: `https://picsum.photos/seed/google-restaurant-${idx + 1}/900/400`,
-      }));
+    const newRestaurants = results
+      .filter((place) => !existingByName.has((place.name || "").toLowerCase()));
+
+    // Use local images for new restaurants
+    console.log(`🖼️ Using local images for ${newRestaurants.length} new restaurants...`);
+    const toInsert = await Promise.all(
+      newRestaurants.map(async (place, idx) => {
+        const cuisine = normalizeCuisineFromGoogleTypes(place.types);
+        
+        // Use local image mapping based on restaurant name and cuisine
+        const restaurantImage = getRestaurantImage(
+          place.name as string,
+          cuisine
+        );
+
+        return {
+          name: place.name as string,
+          cuisine: cuisine,
+          address: place.vicinity || "",
+          phone: null as string | null,
+          website: null as string | null,
+          latitude: place.geometry?.location?.lat as number,
+          longitude: place.geometry?.location?.lng as number,
+          delivery_fee: 3.99 + (idx % 3) * 0.5,
+          eta: `${20 + (idx % 15)} mins`,
+          image: restaurantImage,
+        };
+      })
+    );
 
     if (toInsert.length > 0) {
+      console.log(
+        `✨ Inserting ${toInsert.length} restaurants with local images`
+      );
       const { error: insertError } = await supabase
         .from("restaurants")
         .insert(toInsert);
@@ -402,12 +585,12 @@ async function fetchFromOverpass(
   lon: number
 ): Promise<RestaurantFromOSM[] | null> {
   try {
-    // Calculate bounding box with LARGER radius (0.1 degrees ≈ 11 km)
+    // Calculate bounding box with LARGER radius (0.15 degrees ≈ 16.5 km)
     const bbox = {
-      south: lat - 0.1,
-      west: lon - 0.1,
-      north: lat + 0.1,
-      east: lon + 0.1,
+      south: lat - 0.15,
+      west: lon - 0.15,
+      north: lat + 0.15,
+      east: lon + 0.15,
     };
 
     // Try multiple overpass endpoints to handle rate limiting
@@ -427,7 +610,7 @@ async function fetchFromOverpass(
       way["amenity"="fast_food"](${bbox.south},${bbox.west},${bbox.north},${bbox.east});
     );out center;`;
 
-    const restaurants: RestaurantFromOSM[] = [];
+    let restaurants: RestaurantFromOSM[] = [];
     const idSet = new Set<string>();
 
     // Try each endpoint until one succeeds
@@ -474,6 +657,8 @@ async function fetchFromOverpass(
         if (data.elements && data.elements.length > 0) {
           console.log(`✓ Found ${data.elements.length} places from ${endpoint}`);
           
+          // Collect valid restaurant data
+          const validElements = [];
           for (const element of data.elements) {
             const name = element.tags?.name;
             if (!name) continue;
@@ -488,29 +673,51 @@ async function fetchFromOverpass(
                 element.tags.cuisine
               : "Restaurant";
 
-            const menu = generateMenuForCuisine(cuisine);
-
-            restaurants.push({
-              id: element.id,
+            validElements.push({
+              element,
               name,
-              latitude: elemLat,
-              longitude: elemLon,
+              elemLat,
+              elemLon,
               cuisine,
-              address: element.tags?.addr,
-              phone: element.tags?.phone,
-              website: element.tags?.website,
-              menu,
-              deliveryFee: Math.random() * 2 + 2.99,
-              eta: Math.floor(Math.random() * 15 + 15) + " mins",
-              image: `https://images.unsplash.com/photo-${Math.abs(
-                element.id
-              )}?w=900&h=400&fit=crop`,
             });
             idSet.add(name);
           }
 
-          if (restaurants.length > 0) {
-            console.log(`✓ Successfully fetched ${restaurants.length} restaurants`);
+          if (validElements.length > 0) {
+            // Use local images for all valid restaurants
+            console.log(
+              `🖼️ Using local images for ${validElements.length} restaurants from Overpass...`
+            );
+            
+            const restaurantsWithImages = await Promise.all(
+              validElements.map(async (item) => {
+                const menu = generateMenuForCuisine(item.cuisine);
+                const restaurantImage = getRestaurantImage(
+                  item.name,
+                  item.cuisine
+                );
+
+                return {
+                  id: item.element.id,
+                  name: item.name,
+                  latitude: item.elemLat,
+                  longitude: item.elemLon,
+                  cuisine: item.cuisine,
+                  address: item.element.tags?.addr,
+                  phone: item.element.tags?.phone,
+                  website: item.element.tags?.website,
+                  menu,
+                  deliveryFee: Math.random() * 2 + 2.99,
+                  eta: Math.floor(Math.random() * 15 + 15) + " mins",
+                  image: restaurantImage,
+                };
+              })
+            );
+
+            restaurants = restaurants.concat(restaurantsWithImages);
+            console.log(
+              `✓ Successfully fetched ${restaurantsWithImages.length} restaurants with local images`
+            );
             return restaurants;
           }
         }
@@ -545,24 +752,8 @@ export async function GET(request: NextRequest) {
 
     console.log(`🔍 Searching for restaurants near ${lat}, ${lon}`);
 
-    // 1. Google Places by user location, then save to Supabase
-    await fetchFromGooglePlacesAndSave(lat, lon);
-
-    // 2. Return restaurants from Supabase
-    const supabaseRestaurants = await fetchFromSupabase();
-    if (supabaseRestaurants && supabaseRestaurants.length > 0) {
-      const sorted = supabaseRestaurants
-        .sort(
-          (a, b) =>
-            calculateDistance(lat, lon, a.latitude, a.longitude) -
-            calculateDistance(lat, lon, b.latitude, b.longitude)
-        )
-        .slice(0, 10);
-      console.log(`✅ Returning ${sorted.length} restaurants from Supabase`);
-      return NextResponse.json(sorted);
-    }
-
-    // 3. Overpass fallback
+    // 1. Try Overpass API first (best for local real restaurants)
+    console.log("📡 Trying Overpass API for local real restaurants...");
     const overpassRestaurants = await fetchFromOverpass(lat, lon);
     if (overpassRestaurants && overpassRestaurants.length > 0) {
       const sorted = overpassRestaurants
@@ -570,13 +761,40 @@ export async function GET(request: NextRequest) {
           (a, b) =>
             calculateDistance(lat, lon, a.latitude, a.longitude) -
             calculateDistance(lat, lon, b.latitude, b.longitude)
-        )
-        .slice(0, 10);
-      console.log(`✅ Returning ${sorted.length} restaurants from Overpass API`);
-      return NextResponse.json(sorted);
+        );
+      console.log(`✅ Returning ${sorted.length} REAL restaurants from Overpass API (NOT hardcoded)`);
+      return NextResponse.json(sorted); // Return ALL restaurants found
     }
 
-    // 4. No demo/mock fallback: return empty list so client can show proper state.
+    // 2. Google Places by user location, then save to Supabase
+    console.log("🌐 Trying Google Places API...");
+    const googleSuccess = await fetchFromGooglePlacesAndSave(lat, lon);
+    if (googleSuccess) {
+      console.log("✅ Google Places found restaurants, checking Supabase...");
+    }
+
+    // 3. Return restaurants from Supabase
+    const supabaseRestaurants = await fetchFromSupabase();
+    if (supabaseRestaurants && supabaseRestaurants.length > 0) {
+      // Filter to only include restaurants within ~15.5 miles (25 km) radius
+      const searchRadiusMiles = 15.5;
+      const nearby = supabaseRestaurants.filter(
+        (r) => calculateDistance(lat, lon, r.latitude, r.longitude) <= searchRadiusMiles
+      );
+      
+      const sorted = nearby
+        .map((r) => ({
+          ...r,
+          distance: calculateDistance(lat, lon, r.latitude, r.longitude),
+        }))
+        .sort((a, b) => (a.distance || 0) - (b.distance || 0));
+      
+      console.log(`✅ Returning ${sorted.length} restaurants from Supabase (filtered to ${searchRadiusMiles} mile radius)`);
+      return NextResponse.json(sorted); // Return ALL restaurants within range
+    }
+
+    // 4. No fallback: return empty list so client shows proper state.
+    console.log("✅ No restaurants found in any API. Returning empty list.");
     return NextResponse.json([]);
   } catch (error) {
     console.error("🚨 Error in /api/restaurants/nearby:", error);

@@ -63,7 +63,6 @@ export default function ChatKitWrapper({
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { items, addItem, saveOrder } = useCart();
-  const lastId = messages[messages.length - 1]?.id ?? 1;
 
   // Load restaurants on mount
   useEffect(() => {
@@ -103,12 +102,21 @@ export default function ChatKitWrapper({
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  const addAssistantMessage = (content: string) => {
+    setMessages((prev) => [
+      ...prev,
+      { id: Date.now(), role: "assistant", content },
+    ]);
+  };
+
   const handleSendMessage = async () => {
     const text = input.trim();
     if (!text || isLoading) return;
 
-    const userMessage: ChatMessage = { id: lastId + 1, role: "user", content: text };
-    setMessages((prev) => [...prev, userMessage]);
+    setMessages((prev) => [
+      ...prev,
+      { id: Date.now(), role: "user", content: text },
+    ]);
     setInput("");
     setIsLoading(true);
     setStatusMessage(null);
@@ -139,99 +147,64 @@ export default function ChatKitWrapper({
       const data: ChatResponse = await response.json();
       const { reply, action } = data;
 
-      if (action && onAIResponse) {
-        onAIResponse(action);
+      if (onAIResponse) {
+        onAIResponse(action ?? reply);
       }
 
-      // FALLBACK: try parsing reply
-      else {
-        try {
-          const parsed = JSON.parse(reply);
-          if (onAIResponse) {
-            onAIResponse(parsed);
-          }
-        } catch {
-          // normal text → ignore
-        }
-      }
-
-      // Handle actions from the chat
-      if (action) {
-        if (action.action === "add_to_cart" && action.restaurant && action.items) {
-          const selectedRestaurant = restaurants.find(
-            (r) => r.name.toLowerCase() === action.restaurant?.toLowerCase()
-          );
-          if (selectedRestaurant) {
-            let addedCount = 0;
-            if (action.items) {
-              for (const orderItem of action.items) {
-                const menuItem = selectedRestaurant.menu.find(
-                  (m) => m.name.toLowerCase() === orderItem.name.toLowerCase()
-                );
-                if (menuItem) {
-                  for (let i = 0; i < orderItem.quantity; i++) {
-                    addItem({
-                      id: `${selectedRestaurant.id}:${menuItem.id}`,
-                      name: menuItem.name,
-                      price: menuItem.price,
-                      restaurantId: String(selectedRestaurant.id),
-                      restaurantName: selectedRestaurant.name,
-                      image: menuItem.image,
-                    });
-                  }
-                  addedCount += orderItem.quantity;
-                }
+      if (action?.action === "add_to_cart" && action.restaurant && action.items) {
+        const selectedRestaurant = restaurants.find(
+          (r) => r.name.toLowerCase() === action.restaurant?.toLowerCase()
+        );
+        if (selectedRestaurant) {
+          let addedCount = 0;
+          for (const orderItem of action.items) {
+            const menuItem = selectedRestaurant.menu.find(
+              (m) => m.name.toLowerCase() === orderItem.name.toLowerCase()
+            );
+            if (menuItem) {
+              for (let i = 0; i < orderItem.quantity; i++) {
+                addItem({
+                  id: `${selectedRestaurant.id}:${menuItem.id}`,
+                  name: menuItem.name,
+                  price: menuItem.price,
+                  restaurantId: String(selectedRestaurant.id),
+                  restaurantName: selectedRestaurant.name,
+                  image: menuItem.image,
+                });
               }
-            }
-            if (addedCount > 0) {
-              setStatusMessage(`✓ Added ${addedCount} items to cart!`);
-              // Add system confirmation message
-              const confirmMessage: ChatMessage = {
-                id: lastId + 2,
-                role: "assistant",
-                content: `✓ Added ${action.items.map((i) => `${i.quantity}x ${i.name}`).join(", ")} from ${action.restaurant} to your cart!`,
-              };
-              setMessages((prev) => [...prev, confirmMessage]);
-              return;
+              addedCount += orderItem.quantity;
             }
           }
-        } else if (action.action === "place_order" && action.delivery_address) {
-          if (items.length > 0) {
-            const restaurantId = items[0]?.restaurantId;
-            if (!restaurantId) {
-              setStatusMessage("⚠️ Cannot place order - cart has invalid restaurant");
-              return;
-            }
-            await saveOrder(restaurantId, action.delivery_address);
-            setStatusMessage("✓ Order placed successfully! 🎉");
-            const confirmMessage: ChatMessage = {
-              id: lastId + 2,
-              role: "assistant",
-              content: "✓ Order placed successfully! Your food is being prepared and will be delivered to " + action.delivery_address,
-            };
-            setMessages((prev) => [...prev, confirmMessage]);
+          if (addedCount > 0) {
+            setStatusMessage(`✓ Added ${addedCount} items to cart!`);
+            addAssistantMessage(
+              `✓ Added ${action.items.map((i) => `${i.quantity}x ${i.name}`).join(", ")} from ${action.restaurant} to your cart!`
+            );
             return;
-          } else {
-            setStatusMessage("⚠️ Cannot place order - cart is empty");
           }
+        }
+      } else if (action?.action === "place_order" && action.delivery_address) {
+        if (items.length === 0) {
+          setStatusMessage("⚠️ Cannot place order - cart is empty");
+        } else {
+          const restaurantId = items[0]?.restaurantId;
+          if (!restaurantId) {
+            setStatusMessage("⚠️ Cannot place order - cart has invalid restaurant");
+            return;
+          }
+          await saveOrder(restaurantId, action.delivery_address);
+          setStatusMessage("✓ Order placed successfully! 🎉");
+          addAssistantMessage(
+            `✓ Order placed successfully! Your food is being prepared and will be delivered to ${action.delivery_address}`
+          );
+          return;
         }
       }
 
-      // If no action was taken, show the reply
-      const aiMessage: ChatMessage = {
-        id: lastId + 2,
-        role: "assistant",
-        content: reply || "I couldn't generate a response.",
-      };
-      setMessages((prev) => [...prev, aiMessage]);
+      addAssistantMessage(reply || "I couldn't generate a response.");
     } catch (error) {
       console.error("Chat error:", error);
-      const fallbackMessage: ChatMessage = {
-        id: lastId + 2,
-        role: "assistant",
-        content: "Sorry, I couldn't reach the AI right now. Please try again.",
-      };
-      setMessages((prev) => [...prev, fallbackMessage]);
+      addAssistantMessage("Sorry, I couldn't reach the AI right now. Please try again.");
     } finally {
       setIsLoading(false);
     }

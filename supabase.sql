@@ -99,6 +99,25 @@ CREATE TABLE IF NOT EXISTS orders (
   FOREIGN KEY (restaurant_id) REFERENCES restaurants(id) ON DELETE CASCADE
 );
 
+-- Create restaurant cache table to store fetched restaurants by city/location
+CREATE TABLE IF NOT EXISTS restaurant_cache (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  city TEXT NOT NULL,
+  latitude DECIMAL(10, 8) NOT NULL,
+  longitude DECIMAL(11, 8) NOT NULL,
+  restaurants JSONB NOT NULL DEFAULT '[]'::jsonb,
+  cache_radius_km INTEGER DEFAULT 25,
+  cached_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  expires_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() + INTERVAL '24 hours',
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Create index for cache lookups
+CREATE INDEX IF NOT EXISTS idx_restaurant_cache_city ON restaurant_cache(city);
+CREATE INDEX IF NOT EXISTS idx_restaurant_cache_location ON restaurant_cache(latitude, longitude);
+CREATE INDEX IF NOT EXISTS idx_restaurant_cache_expires ON restaurant_cache(expires_at);
+
 -- Create order messages table for direct customer-driver chat
 CREATE TABLE IF NOT EXISTS order_messages (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

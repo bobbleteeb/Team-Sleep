@@ -78,9 +78,9 @@ Rules:
     });
 
     return NextResponse.json({ message });
-  } catch (error) {
+  } catch {
     return NextResponse.json(
-      { error: "Failed to generate driver message", details: String(error) },
+      { error: "Failed to generate driver message" },
       { status: 500 }
     );
   }

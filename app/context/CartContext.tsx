@@ -17,6 +17,12 @@ export interface CartItem {
 interface CartContextType {
   items: CartItem[];
   addItem: (item: Omit<CartItem, "quantity">) => void;
+  pendingSwitch: {
+    currentName: string;
+    newName: string;
+  } | null;
+  confirmRestaurantSwitch: () => void;
+  cancelRestaurantSwitch: () => void;
   removeItem: (id: string) => void;
   updateQuantity: (id: string, quantity: number) => void;
   clearCart: () => void;
@@ -39,6 +45,11 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [customerId, setCustomerId] = useState<string>("");
   const [restaurantId, setRestaurantId] = useState<string | null>(null);
+  const [pendingSwitch, setPendingSwitch] = useState<{
+    currentName: string;
+    newName: string;
+    item: Omit<CartItem, "quantity">;
+  } | null>(null);
 
   // Initialize customer and load cart from Supabase
   useEffect(() => {
@@ -68,7 +79,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
             .single();
 
           if (createError) {
-            console.warn("Could not create customer, continuing without persistence:", createError);
+            console.error("Could not create customer, continuing without persistence:", createError);
             setIsLoading(false);
             return;
           }
@@ -77,7 +88,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
             setCustomerId(newCustomer.id);
           }
         } else if (error) {
-          console.warn("Could not fetch customer, continuing without persistence:", error);
+          console.error("Could not fetch customer, continuing without persistence:", error);
           setIsLoading(false);
           return;
         } else if (customer?.id) {
@@ -97,11 +108,11 @@ export function CartProvider({ children }: { children: ReactNode }) {
               }
             }
           } catch (cartErr) {
-            console.warn("Could not load cart from DB:", cartErr);
+            console.error("Could not load cart from DB:", cartErr);
           }
         }
       } catch (err) {
-        console.warn("Error initializing cart (app will work without persistence):", err);
+        console.error("Error initializing cart (app will work without persistence):", err);
       } finally {
         setIsLoading(false);
       }
@@ -131,15 +142,14 @@ export function CartProvider({ children }: { children: ReactNode }) {
   }, [items, customerId, restaurantId]);
 
   const addItem = (newItem: Omit<CartItem, "quantity">) => {
-    // Warn if switching restaurants
+    // Queue a switch confirmation if cart contains another restaurant.
     if (restaurantId && restaurantId !== newItem.restaurantId) {
-      const confirmSwitch = window.confirm(
-        `You have items from "${restaurantId}". Switch to "${newItem.restaurantName}"? This will clear your cart.`
-      );
-      if (confirmSwitch) {
-        setItems([{ ...newItem, quantity: 1 }]);
-        setRestaurantId(newItem.restaurantId);
-      }
+      const currentName = items[0]?.restaurantName ?? restaurantId;
+      setPendingSwitch({
+        currentName,
+        newName: newItem.restaurantName,
+        item: newItem,
+      });
       return;
     }
 
@@ -157,6 +167,18 @@ export function CartProvider({ children }: { children: ReactNode }) {
       setRestaurantId(newItem.restaurantId);
     }
     setIsOpen(true);
+  };
+
+  const confirmRestaurantSwitch = () => {
+    if (!pendingSwitch) return;
+    setItems([{ ...pendingSwitch.item, quantity: 1 }]);
+    setRestaurantId(pendingSwitch.item.restaurantId);
+    setPendingSwitch(null);
+    setIsOpen(true);
+  };
+
+  const cancelRestaurantSwitch = () => {
+    setPendingSwitch(null);
   };
 
   const removeItem = (id: string) => {
@@ -179,7 +201,10 @@ export function CartProvider({ children }: { children: ReactNode }) {
   };
 
   const saveOrder = async (restaurantId: string, deliveryAddress: string) => {
-    if (!customerId || items.length === 0) return;
+    if (!customerId) {
+      throw new Error("Account not ready. Please refresh and try again.");
+    }
+    if (items.length === 0) return;
 
     try {
       const response = await fetch("/api/orders", {
@@ -194,13 +219,20 @@ export function CartProvider({ children }: { children: ReactNode }) {
         }),
       });
 
-      if (response.ok) {
-        clearCart();
-        // Delete the cart from DB
-        await fetch(`/api/cart?customerId=${customerId}`, { method: "DELETE" });
+      if (!response.ok) {
+        const data = (await response.json().catch(() => null)) as {
+          error?: string;
+        } | null;
+        throw new Error(data?.error ?? "Could not place order. Please try again.");
       }
+
+      clearCart();
+      // Delete the cart from DB
+      await fetch(`/api/cart?customerId=${customerId}`, { method: "DELETE" });
     } catch (err) {
       console.error("Error saving order:", err);
+      if (err instanceof Error) throw err;
+      throw new Error("Could not place order. Please try again.");
     }
   };
 
@@ -212,6 +244,14 @@ export function CartProvider({ children }: { children: ReactNode }) {
       value={{
         items,
         addItem,
+        pendingSwitch: pendingSwitch
+          ? {
+              currentName: pendingSwitch.currentName,
+              newName: pendingSwitch.newName,
+            }
+          : null,
+        confirmRestaurantSwitch,
+        cancelRestaurantSwitch,
         removeItem,
         updateQuantity,
         clearCart,

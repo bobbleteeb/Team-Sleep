@@ -415,6 +415,12 @@ type GooglePlacesResponse = {
   }>;
 };
 
+type SupabaseInsertClient = {
+  from: (table: string) => {
+    insert: (values: unknown, options?: unknown) => Promise<{ error: unknown }>;
+  };
+};
+
 function normalizeCuisineFromGoogleTypes(types?: string[]): string {
   if (!types || types.length === 0) return "Restaurant";
   const cuisineType = types.find(
@@ -432,7 +438,7 @@ function normalizeCuisineFromGoogleTypes(types?: string[]): string {
 }
 
 async function insertMenusForRestaurant(
-  supabase: ReturnType<typeof createClient> | any,
+  supabase: SupabaseInsertClient,
   restaurantId: number | string,
   cuisine: string
 ): Promise<void> {

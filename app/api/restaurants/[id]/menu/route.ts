@@ -19,12 +19,6 @@ type MenuItem = {
   image: string;
 };
 
-type SupabaseInsertClient = {
-  from: (table: string) => {
-    insert: (values: unknown, options?: unknown) => Promise<{ error: unknown }>;
-  };
-};
-
 function fallbackMenuForCuisine(cuisine: string): MenuItem[] {
   const menus: Record<string, Array<{ name: string; price: number }>> = {
     Italian: [
@@ -79,7 +73,7 @@ function fallbackMenuForCuisine(cuisine: string): MenuItem[] {
 }
 
 async function persistFallbackMenu(
-  supabase: SupabaseInsertClient,
+  supabase: NonNullable<ReturnType<typeof getSupabaseServiceClient>>,
   restaurantId: string,
   items: MenuItem[]
 ): Promise<void> {

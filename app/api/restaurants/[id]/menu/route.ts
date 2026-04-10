@@ -1,10 +1,16 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || "",
-  process.env.SUPABASE_SERVICE_ROLE_KEY || ""
-);
+function getSupabaseServiceClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    return null;
+  }
+
+  return createClient(supabaseUrl, serviceRoleKey);
+}
 
 type MenuItem = {
   id: number;
@@ -67,6 +73,7 @@ function fallbackMenuForCuisine(cuisine: string): MenuItem[] {
 }
 
 async function persistFallbackMenu(
+  supabase: ReturnType<typeof createClient> | any,
   restaurantId: string,
   items: MenuItem[]
 ): Promise<void> {
@@ -95,6 +102,14 @@ export async function GET(
   context: { params: Promise<{ id: string }> }
 ) {
   try {
+    const supabase = getSupabaseServiceClient();
+    if (!supabase) {
+      return NextResponse.json(
+        { error: "Supabase is not configured" },
+        { status: 500 }
+      );
+    }
+
     const { id } = await context.params;
 
     const { data: restaurant, error: restaurantError } = await supabase
@@ -158,7 +173,7 @@ export async function GET(
     }
 
     const generatedMenu = fallbackMenuForCuisine(restaurant.cuisine || "Restaurant");
-    await persistFallbackMenu(String(restaurant.id), generatedMenu);
+    await persistFallbackMenu(supabase, String(restaurant.id), generatedMenu);
     return NextResponse.json(generatedMenu);
   } catch (error) {
     return NextResponse.json(

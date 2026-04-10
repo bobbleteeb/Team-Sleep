@@ -2,10 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getRestaurantImage, getMenuItemImage } from "@/app/lib/imageMapping";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || "",
-  process.env.SUPABASE_SERVICE_ROLE_KEY || ""
-);
+function getSupabaseServiceClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    return null;
+  }
+
+  return createClient(supabaseUrl, serviceRoleKey);
+}
 
 export interface RestaurantFromOSM {
   id: number;
@@ -50,6 +56,11 @@ function calculateDistance(
 // Fetch restaurants from Supabase database
 async function fetchFromSupabase(): Promise<RestaurantFromOSM[] | null> {
   try {
+    const supabase = getSupabaseServiceClient();
+    if (!supabase) {
+      return null;
+    }
+
     console.log("📦 Querying Supabase for real restaurants...");
 
     // Fetch all restaurants from Supabase
@@ -421,6 +432,7 @@ function normalizeCuisineFromGoogleTypes(types?: string[]): string {
 }
 
 async function insertMenusForRestaurant(
+  supabase: ReturnType<typeof createClient> | any,
   restaurantId: number | string,
   cuisine: string
 ): Promise<void> {
@@ -450,6 +462,11 @@ async function fetchFromGooglePlacesAndSave(
   lat: number,
   lon: number
 ): Promise<boolean> {
+  const supabase = getSupabaseServiceClient();
+  if (!supabase) {
+    return false;
+  }
+
   const googleApiKey =
     process.env.GOOGLE_MAPS_API_KEY || process.env.GOOGLE_PLACES_API_KEY;
 
@@ -568,7 +585,11 @@ async function fetchFromGooglePlacesAndSave(
 
     for (const restaurant of targetRestaurants) {
       if (hasMenu.has(String(restaurant.id))) continue;
-      await insertMenusForRestaurant(restaurant.id, restaurant.cuisine || "Restaurant");
+      await insertMenusForRestaurant(
+        supabase,
+        restaurant.id,
+        restaurant.cuisine || "Restaurant"
+      );
     }
 
     console.log(`✅ Saved ${targetRestaurants.length} Google Places restaurants to Supabase`);

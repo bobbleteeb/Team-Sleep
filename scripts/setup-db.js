@@ -17,7 +17,7 @@ async function setupDatabase() {
 
     // Create restaurants table
     console.log("📋 Creating restaurants table...");
-    const { error: restaurantsError } = await supabase.rpc(
+    await supabase.rpc(
       "exec",
       {
         sql: `
@@ -52,37 +52,6 @@ async function setupDatabase() {
     // For Supabase SQL, we need to use a different approach
     // Let's use the raw SQL endpoint
     console.log("✅ Creating tables via SQL...");
-
-    const sqlStatements = [
-      `
-        CREATE TABLE IF NOT EXISTS public.restaurants (
-          id BIGSERIAL PRIMARY KEY,
-          name TEXT NOT NULL UNIQUE,
-          cuisine TEXT,
-          latitude DECIMAL(10, 8) NOT NULL,
-          longitude DECIMAL(11, 8) NOT NULL,
-          address TEXT,
-          phone TEXT,
-          website TEXT,
-          created_at TIMESTAMP DEFAULT NOW()
-        );
-      `,
-      `
-        CREATE TABLE IF NOT EXISTS public.menus (
-          id BIGSERIAL PRIMARY KEY,
-          restaurant_id BIGINT NOT NULL REFERENCES public.restaurants(id) ON DELETE CASCADE,
-          name TEXT NOT NULL,
-          price DECIMAL(10, 2) NOT NULL,
-          created_at TIMESTAMP DEFAULT NOW()
-        );
-      `,
-      `
-        CREATE INDEX IF NOT EXISTS restaurants_location ON public.restaurants(latitude, longitude);
-      `,
-      `
-        CREATE INDEX IF NOT EXISTS menus_restaurant ON public.menus(restaurant_id);
-      `,
-    ];
 
     console.log("✖️  Direct SQL via RPC not available in this setup");
     console.log("\n📌 Please run this SQL in your Supabase dashboard:");

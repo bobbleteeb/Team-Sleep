@@ -21,6 +21,7 @@ interface AuthContextType {
     role: "customer" | "driver"
   ) => Promise<void>;
   logout: () => void;
+  toggleRole: () => void;
   error: string | null;
 }
 
@@ -43,6 +44,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     setIsLoading(false);
   }, []);
+
+  const toggleRole = () => {
+    if (!user) return;
+    const newRole = user.role === "customer" ? "driver" : "customer";
+    const newUser = { ...user, role: newRole as "customer" | "driver" };
+    setUser(newUser);
+    localStorage.setItem("currentUser", JSON.stringify(newUser));
+  };
 
   const login = async (email: string, password: string) => {
     setError(null);
@@ -113,7 +122,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, signup, logout, error }}>
+    <AuthContext.Provider value={{ user, isLoading, login, signup, logout, toggleRole, error }}>
       {children}
     </AuthContext.Provider>
   );

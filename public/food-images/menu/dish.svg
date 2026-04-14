@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400">
+  <defs>
+    <linearGradient id="dishGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#FFD89B;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#FFAE57;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  <rect width="400" height="400" fill="url(#dishGrad)"/>
+  <circle cx="200" cy="200" r="120" fill="#FFB84D" opacity="0.8"/>
+  <circle cx="150" cy="150" r="50" fill="white" opacity="0.3"/>
+  <text x="200" y="220" font-size="64" fill="white" text-anchor="middle" font-family="Arial">🍽️</text>
+</svg>

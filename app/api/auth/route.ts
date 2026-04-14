@@ -1,10 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabase } from "../../lib/supabase";
-import crypto from "crypto";
-
-function hashPassword(password: string): string {
-  return crypto.createHash("sha256").update(password).digest("hex");
-}
+import bcrypt from "bcryptjs";
 
 export async function POST(request: Request) {
   const body = (await request.json()) as {
@@ -37,7 +33,7 @@ export async function POST(request: Request) {
         .from("users")
         .insert({
           email,
-          password_hash: hashPassword(password),
+          password_hash: await bcrypt.hash(password, 12),
           name,
           role,
         })
@@ -57,7 +53,9 @@ export async function POST(request: Request) {
         });
       }
 
-      return NextResponse.json({ user, success: true }, { status: 201 });
+      const { password_hash, ...safeUser } = user;
+      void password_hash;
+      return NextResponse.json({ user: safeUser, success: true }, { status: 201 });
     } catch (err) {
       console.error("Signup error:", err);
       return NextResponse.json({ error: "Signup failed" }, { status: 500 });
@@ -77,14 +75,17 @@ export async function POST(request: Request) {
         );
       }
 
-      if (user.password_hash !== hashPassword(password)) {
+      const validPassword = await bcrypt.compare(password, user.password_hash);
+      if (!validPassword) {
         return NextResponse.json(
           { error: "Invalid password" },
           { status: 401 }
         );
       }
 
-      return NextResponse.json({ user, success: true });
+      const { password_hash, ...safeUser } = user;
+      void password_hash;
+      return NextResponse.json({ user: safeUser, success: true });
     } catch (err) {
       console.error("Login error:", err);
       return NextResponse.json({ error: "Login failed" }, { status: 500 });

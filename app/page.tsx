@@ -211,7 +211,9 @@ export default function Home() {
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const contentScrollRef = useRef<HTMLDivElement>(null);
+  const chatSectionRef = useRef<HTMLHeadingElement>(null);
+  const chatScrollRef = useRef<HTMLDivElement>(null);
 
   // ─── Load from localStorage ───────────────────────────────────────────────
 
@@ -243,10 +245,12 @@ export default function Home() {
     });
   }, [aiView, selectedRestaurantId, restaurants]);
 
-  // ─── Auto-scroll chat ─────────────────────────────────────────────────────
+  // ─── Auto-scroll chat container only ─────────────────────────────────────
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const el = chatScrollRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
   }, [chatMessages]);
 
   // ─── Fetch restaurants ────────────────────────────────────────────────────
@@ -329,6 +333,9 @@ export default function Home() {
   );
   const deliveryFee = items.length > 0 ? (selectedRestaurant?.deliveryFee ?? 0) : 0;
   const orderTotal = Math.max(0, totalPrice + deliveryFee + tip - promoDiscount);
+  const restaurantGridClass = isOpen
+    ? "grid gap-4 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+    : "grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5";
 
   // ─── Saved meals ──────────────────────────────────────────────────────────
 
@@ -436,6 +443,17 @@ export default function Home() {
     ]);
   };
 
+  const scrollToChatSection = () => {
+    const container = contentScrollRef.current;
+    const target = chatSectionRef.current;
+    if (!container || !target) return;
+
+    const containerRect = container.getBoundingClientRect();
+    const targetRect = target.getBoundingClientRect();
+    const top = targetRect.top - containerRect.top + container.scrollTop - 12;
+    container.scrollTo({ top: Math.max(top, 0), behavior: "smooth" });
+  };
+
   const handleSendMessage = async (presetText?: string) => {
     const text = (presetText ?? chatInput).trim();
     if (!text || chatLoading) return;
@@ -444,8 +462,13 @@ export default function Home() {
     setChatInput("");
     setChatLoading(true);
     setStatusMessage(null);
-    // Switch back to chat view when user sends a message
+    // Keep current panel selections while sending a message
     setSidebarView("none");
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        scrollToChatSection();
+      });
+    });
 
     try {
       const res = await fetch("/api/chat", {
@@ -599,13 +622,13 @@ export default function Home() {
   // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-background to-zinc-100 dark:to-zinc-950 text-foreground">
+    <div className="flex h-dvh flex-col overflow-hidden bg-gradient-to-br from-amber-50 via-orange-50/70 to-amber-100/80 text-foreground dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
       {/* Header */}
-      <header className="relative overflow-hidden border-b border-orange-200 dark:border-orange-900/20 bg-gradient-to-r from-white via-orange-50 to-white dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 px-6 py-5 shadow-lg">
+      <header className="relative overflow-hidden border-b border-orange-200 dark:border-orange-900/20 bg-gradient-to-r from-amber-50 via-orange-50 to-amber-100 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 px-6 py-5 shadow-lg">
         <div className="absolute inset-0 opacity-30 bg-gradient-to-r from-orange-400/10 via-red-400/10 to-purple-400/10 dark:from-orange-500/5 dark:to-purple-500/5 pointer-events-none" />
         <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4 relative z-10">
           <div>
-            <h1 className="text-3xl font-black bg-gradient-to-r from-orange-600 via-red-600 to-purple-600 bg-clip-text text-transparent">🍽️ QuickBite</h1>
+            <h1 className="text-3xl font-black bg-gradient-to-r from-orange-600 via-orange-500 to-red-600 bg-clip-text text-transparent">🍽️ QuickBite</h1>
             <div className="flex items-center gap-3 mt-1">
               <p className="text-sm text-orange-600 dark:text-orange-400 font-medium">Welcome back, {user.name}</p>
               {userLocation && (
@@ -647,7 +670,7 @@ export default function Home() {
         </div>
       </header>
 
-      <main className="flex h-[calc(100vh-73px)] overflow-hidden">
+      <main className="flex min-h-0 flex-1 overflow-hidden">
         {/* ── Sidebar ── */}
         <aside className="hidden w-56 shrink-0 flex-col border-r border-orange-200 dark:border-orange-900/20 bg-gradient-to-b from-white via-orange-50/50 to-white dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 md:flex shadow-lg">
           <div className="p-6">
@@ -711,9 +734,9 @@ export default function Home() {
         </aside>
 
         {/* ── Main content ── */}
-        <div className="flex flex-1 flex-col overflow-hidden">
-          <div className="flex-1 overflow-y-auto p-6">
-            <div className="mx-auto max-w-3xl space-y-6">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <div ref={contentScrollRef} className="min-h-0 flex-1 overflow-y-auto p-6 pb-5">
+            <div className="mx-auto w-full max-w-6xl space-y-6 xl:max-w-7xl">
 
               {/* Past Orders */}
               {sidebarView === "past-orders" && (
@@ -957,12 +980,12 @@ export default function Home() {
               {/* Default: chat + AI views */}
               {sidebarView === "none" && (
                 <>
-                  <h2 className="text-center text-4xl font-black bg-gradient-to-r from-orange-600 via-red-600 to-purple-600 bg-clip-text text-transparent">
+                  <h2 ref={chatSectionRef} className="text-center text-4xl font-black bg-gradient-to-r from-orange-600 via-red-600 to-orange-500 bg-clip-text text-transparent">
                     What are you craving today?
                   </h2>
 
                   {/* Chat messages */}
-                  <div className="max-h-[50vh] space-y-4 overflow-y-auto pr-1">
+                  <div ref={chatScrollRef} className="max-h-[42vh] space-y-4 overflow-y-auto pr-1">
                     {chatMessages.map((msg) => (
                       <div
                         key={msg.id}
@@ -1066,17 +1089,16 @@ export default function Home() {
                         ))}
                       </div>
                     )}
-                    <div ref={messagesEndRef} />
                   </div>
 
-                  {/* AI restaurant grid - DoorDash/Uber style with many columns */}
-                  {aiView === "restaurants" && (
+                  {/* AI restaurant grid - show by default so restaurant images stay visible */}
+                  {(aiView === "restaurants" || aiView === "none") && (
                     <div className="space-y-4">
                       <div className="flex items-center justify-between">
                         <h2 className="text-2xl font-bold text-orange-600">🏪 All Restaurants ({restaurants.length})</h2>
                         <span className="text-sm text-gray-500 dark:text-gray-400">Sorted by distance</span>
                       </div>
-                      <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+                      <div className={restaurantGridClass}>
                         {restaurants.map((r, idx) => (
                           <div
                             key={r.id}
@@ -1258,7 +1280,7 @@ export default function Home() {
           )}
 
           {/* Chat input bar */}
-          <div className="border-t border-orange-200 dark:border-orange-900/20 bg-gradient-to-r from-white via-orange-50/50 to-white dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 p-4 shadow-lg">
+          <div className="border-t border-orange-200 dark:border-orange-900/20 bg-gradient-to-r from-amber-50 via-orange-50 to-amber-100 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 p-4 shadow-lg">
             <div className="mx-auto flex max-w-3xl gap-3">
               <input
                 value={chatInput}
@@ -1282,7 +1304,7 @@ export default function Home() {
 
         {/* ── Cart panel ── */}
         {isOpen && (
-          <div className="flex w-96 shrink-0 flex-col border-l-2 border-orange-200 dark:border-orange-900/20 bg-gradient-to-b from-white via-orange-50/30 to-white dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 shadow-2xl">
+          <div className="flex min-h-0 w-96 shrink-0 flex-col border-l-2 border-orange-200 dark:border-orange-900/20 bg-gradient-to-b from-amber-50 via-orange-50 to-amber-100 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 shadow-2xl">
             <div className="flex items-center justify-between border-b-2 border-orange-200 dark:border-orange-900/20 bg-gradient-to-r from-orange-500 to-red-600 px-6 py-4 text-white shadow-lg">
               <h2 className="text-lg font-bold">🛒 Your Cart</h2>
               <button
@@ -1294,7 +1316,7 @@ export default function Home() {
               </button>
             </div>
 
-            <div className="flex-1 space-y-3 overflow-y-auto p-4">
+            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
               {items.length === 0 ? (
                 <div className="mt-12 text-center space-y-3">
                   <p className="text-4xl">🍕</p>
@@ -1344,7 +1366,7 @@ export default function Home() {
             </div>
 
             {items.length > 0 && (
-              <div className="space-y-4 border-t-2 border-orange-200 dark:border-orange-900/20 bg-gradient-to-r from-orange-50 to-red-50 dark:from-slate-800 dark:to-slate-900 p-4">
+              <div className="shrink-0 space-y-4 border-t-2 border-orange-200 dark:border-orange-900/20 bg-gradient-to-r from-amber-100 via-orange-50 to-amber-100 dark:from-slate-800 dark:via-slate-800 dark:to-slate-900 p-4">
                 <div className="space-y-2">
                   <div className="flex justify-between text-sm font-medium">
                     <span className="text-gray-700 dark:text-gray-300">Subtotal</span>

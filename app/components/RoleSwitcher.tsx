@@ -8,10 +8,10 @@ export default function RoleSwitcher() {
   if (!user) return null;
 
   return (
-    <div className="fixed bottom-6 left-6 z-[9999]">
+    <div className="fixed bottom-24 left-4 z-40 md:bottom-6 md:left-6">
       <button
         onClick={toggleRole}
-        className="flex items-center gap-2 rounded-full bg-slate-900/90 dark:bg-orange-600/90 px-4 py-2 text-sm font-bold text-white shadow-2xl backdrop-blur-md hover:scale-105 transition-all border border-white/20"
+        className="flex items-center gap-2 rounded-full border border-orange-200 bg-gradient-to-r from-orange-500 to-red-600 px-4 py-2 text-sm font-bold text-white shadow-2xl backdrop-blur-md transition-all hover:scale-105 hover:shadow-orange-500/30 dark:border-orange-700"
       >
         <span className="text-lg">{user.role === "customer" ? "🚲" : "🛍️"}</span>
         Switch to {user.role === "customer" ? "Driver" : "Customer"}

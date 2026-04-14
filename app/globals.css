@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* Make Tailwind dark: variants follow .dark class instead of system preference */
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
   --background: #f8f8f8;
   --foreground: #111111;

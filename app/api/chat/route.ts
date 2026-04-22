@@ -20,12 +20,161 @@ interface Restaurant {
   image: string;
 }
 
+type FoodSearchResult = {
+  name: string;
+  address?: string;
+  rating?: number;
+  latitude: number;
+  longitude: number;
+  distanceMiles: number;
+};
+
+function calculateDistanceMiles(
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number
+): number {
+  const R = 3959;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+function extractFoodQuery(message: string): string | null {
+  const text = message.toLowerCase();
+  const patterns = [
+    /(?:find|search|look for|show me|get me)\s+([a-z\s]+?)(?:\s+(?:near me|nearby|close|around here))?$/i,
+    /(?:any|where can i get|i want)\s+([a-z\s]+?)(?:\s+(?:near me|nearby|close|around here))?$/i,
+    /([a-z\s]+?)\s+(?:near me|nearby|close|around here)$/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = message.match(pattern);
+    if (match?.[1]) {
+      return match[1].trim().toLowerCase();
+    }
+  }
+
+  if (text.includes("near me") || text.includes("nearby") || text.includes("close")) {
+    const words = text.replace(/[^a-z\s]/g, " ").split(/\s+/).filter(Boolean);
+    const stopWords = new Set([
+      "find",
+      "search",
+      "look",
+      "for",
+      "show",
+      "me",
+      "get",
+      "any",
+      "where",
+      "can",
+      "i",
+      "want",
+      "near",
+      "nearby",
+      "close",
+      "around",
+      "here",
+      "food",
+      "place",
+      "places",
+      "restaurant",
+      "restaurants",
+    ]);
+    const filtered = words.filter((word) => !stopWords.has(word));
+    return filtered.length > 0 ? filtered.join(" ") : null;
+  }
+
+  return null;
+}
+
+function hasMenuMatches(menuData: Restaurant[], foodQuery: string): boolean {
+  const needle = foodQuery.toLowerCase();
+  return menuData.some(
+    (restaurant) =>
+      restaurant.cuisine?.toLowerCase().includes(needle) ||
+      restaurant.name.toLowerCase().includes(needle) ||
+      restaurant.menu.some((item) => item.name.toLowerCase().includes(needle))
+  );
+}
+
+async function searchGoogleFoodPlaces(
+  foodQuery: string,
+  latitude: number,
+  longitude: number
+): Promise<FoodSearchResult[]> {
+  const apiKey = process.env.GOOGLE_MAPS_API_KEY || process.env.GOOGLE_PLACES_API_KEY;
+  if (!apiKey) return [];
+
+  const radii = [5000, 15000];
+  for (const radius of radii) {
+    const endpoint =
+      "https://maps.googleapis.com/maps/api/place/textsearch/json" +
+      `?query=${encodeURIComponent(`${foodQuery} restaurants`)}` +
+      `&location=${latitude},${longitude}` +
+      `&radius=${radius}` +
+      `&key=${apiKey}`;
+
+    const response = await fetch(endpoint, { cache: "no-store" });
+    if (!response.ok) continue;
+
+    const data = (await response.json()) as {
+      status?: string;
+      results?: Array<{
+        name?: string;
+        formatted_address?: string;
+        rating?: number;
+        geometry?: { location?: { lat?: number; lng?: number } };
+      }>;
+    };
+
+    if (data.status && !["OK", "ZERO_RESULTS"].includes(data.status)) continue;
+
+    const matches = (data.results || [])
+      .filter(
+        (result) =>
+          typeof result.name === "string" &&
+          typeof result.geometry?.location?.lat === "number" &&
+          typeof result.geometry?.location?.lng === "number"
+      )
+      .map((result) => {
+        const lat = result.geometry?.location?.lat as number;
+        const lon = result.geometry?.location?.lng as number;
+        return {
+          name: result.name as string,
+          address: result.formatted_address,
+          rating: result.rating,
+          latitude: lat,
+          longitude: lon,
+          distanceMiles: calculateDistanceMiles(latitude, longitude, lat, lon),
+        };
+      })
+      .sort((a, b) => a.distanceMiles - b.distanceMiles)
+      .slice(0, 5);
+
+    if (matches.length > 0) {
+      return matches;
+    }
+  }
+
+  return [];
+}
+
 export async function POST(request: Request) {
   const body = (await request.json()) as {
     message?: string;
     menuData?: Restaurant[];
     currentCart?: Array<{ name: string; quantity: number; price: number }>;
     messages?: Array<{ role: string; content: string }>;
+    userLocation?: { latitude?: number; longitude?: number } | null;
   };
 
   const message = body.message?.trim();
@@ -47,6 +196,37 @@ export async function POST(request: Request) {
   const cartSummary = body.currentCart
     ? body.currentCart.map((item) => `${item.quantity}x ${item.name}`).join(", ")
     : "empty";
+
+  const foodQuery = extractFoodQuery(message);
+  const hasLocalFoodMatches =
+    foodQuery && menuData.length > 0 ? hasMenuMatches(menuData, foodQuery) : false;
+  const lat = body.userLocation?.latitude;
+  const lon = body.userLocation?.longitude;
+
+  if (
+    foodQuery &&
+    !hasLocalFoodMatches &&
+    typeof lat === "number" &&
+    typeof lon === "number"
+  ) {
+    const nearbyMatches = await searchGoogleFoodPlaces(foodQuery, lat, lon);
+    if (nearbyMatches.length > 0) {
+      const lines = nearbyMatches.map((place, index) => {
+        const ratingText =
+          typeof place.rating === "number" ? ` • ⭐ ${place.rating.toFixed(1)}` : "";
+        const addressText = place.address ? ` • ${place.address}` : "";
+        return `${index + 1}. ${place.name} (${place.distanceMiles.toFixed(1)} mi${ratingText})${addressText}`;
+      });
+
+      return NextResponse.json({
+        reply:
+          `I could not find "${foodQuery}" in nearby QuickBite menus, so I rechecked your location and found these closest options:\n` +
+          `${lines.join("\n")}\n` +
+          "Tap a card to open directions, or ask me to find a similar item available in QuickBite.",
+        fallbackPlaces: nearbyMatches,
+      });
+    }
+  }
 
   const systemPrompt = `You are a helpful food delivery assistant for QuickBite.
 

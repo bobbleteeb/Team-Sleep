@@ -12,6 +12,8 @@ import {
   getUserLocationAndNearbyRestaurants, 
   type Location
 } from "./lib/geolocation";
+import { calculatePromoDiscount } from "./lib/promo";
+import { getRestaurantImage } from "./lib/imageMapping";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -37,7 +39,7 @@ interface Restaurant {
 }
 
 type ChatCard = {
-  type: "restaurant" | "item";
+  type: "restaurant" | "item" | "external_place";
   id: string | number;
   name: string;
   image: string;
@@ -45,6 +47,7 @@ type ChatCard = {
   restaurantId?: number;
   restaurantName?: string;
   itemData?: MenuItem;
+  mapUrl?: string;
 };
 
 type ChatMessage = {
@@ -61,7 +64,17 @@ type OrderAction = {
   delivery_address?: string;
 };
 
-type ChatResponse = { reply: string; action?: OrderAction };
+type ChatResponse = {
+  reply: string;
+  action?: OrderAction;
+  fallbackPlaces?: Array<{
+    name: string;
+    address?: string;
+    latitude: number;
+    longitude: number;
+    distanceMiles: number;
+  }>;
+};
 
 type SavedMeal = {
   id: string;
@@ -195,11 +208,6 @@ export default function Home() {
   const [splitCount, setSplitCount] = useState(1);
   const [savedAddresses, setSavedAddresses] = useState<Array<{ id: string; name: string; address: string }>>([]);
 
-  // Favorites & filters
-  const [favoriteIds, setFavoriteIds] = useState<Set<number>>(new Set());
-  const [dietaryFilter, setDietaryFilter] = useState<string>("All");
-  const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
-
   // Chat
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
     {
@@ -222,8 +230,6 @@ export default function Home() {
     if (saved) setSavedMeals(JSON.parse(saved) as SavedMeal[]);
     const recent = localStorage.getItem("quickbite_recent");
     if (recent) setRecentRestaurants(JSON.parse(recent) as RecentRestaurant[]);
-    const favs = localStorage.getItem("quickbite_favorites");
-    if (favs) setFavoriteIds(new Set(JSON.parse(favs) as number[]));
     const addrs = localStorage.getItem("quickbite_addresses");
     if (addrs) setSavedAddresses(JSON.parse(addrs));
   }, []);
@@ -359,38 +365,36 @@ export default function Home() {
   const isSaved = (item: MenuItem, restaurant: Restaurant) =>
     savedMeals.some((m) => m.id === `${restaurant.id}:${item.id}`);
 
-  // ─── Favorites ────────────────────────────────────────────────────────────
-
-  const toggleFavorite = (rId: number) => {
-    setFavoriteIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(rId)) next.delete(rId);
-      else next.add(rId);
-      localStorage.setItem("quickbite_favorites", JSON.stringify([...next]));
-      return next;
-    });
-  };
-
   // ─── Promo codes ──────────────────────────────────────────────────────────
-
-  const PROMO_CODES: Record<string, number> = {
-    PIZZA20: 0.20, BURGER15: 0.15, SUSHI25: 0.25,
-    DELIVERY5: 5, FIRSTORDER: 10, WEEKDAY10: 0.10,
-  };
 
   const applyPromo = () => {
     const code = promoCode.trim().toUpperCase();
     if (!code) return;
-    const discount = PROMO_CODES[code];
-    if (!discount) {
-      setPromoError("Invalid promo code.");
+    const result = calculatePromoDiscount(code, totalPrice, deliveryFee, {
+      // The server validates FIRSTORDER authoritatively on checkout.
+      isFirstOrder: true,
+    });
+    if (!result.valid) {
+      setPromoError(result.error ?? "Invalid promo code.");
       setPromoDiscount(0);
       return;
     }
     setPromoError(null);
-    setPromoDiscount(discount < 1 ? totalPrice * discount : discount);
+    setPromoDiscount(result.discount);
     setStatusMessage(`✅ Promo "${code}" applied!`);
   };
+
+  useEffect(() => {
+    const code = promoCode.trim().toUpperCase();
+    if (!code || promoDiscount <= 0) return;
+    const result = calculatePromoDiscount(code, totalPrice, deliveryFee, {
+      isFirstOrder: true,
+    });
+    if (result.valid) {
+      setPromoDiscount(result.discount);
+      setPromoError(null);
+    }
+  }, [promoCode, totalPrice, deliveryFee, promoDiscount]);
 
   // ─── Past orders ──────────────────────────────────────────────────────────
 
@@ -477,13 +481,29 @@ export default function Home() {
         body: JSON.stringify({
           message: text,
           menuData: restaurants,
+          userLocation,
           currentCart: items.map((i) => ({ name: i.name, quantity: i.quantity, price: i.price })),
           messages: chatMessages.map((m) => ({ role: m.role, content: m.content })),
         }),
       });
       if (!res.ok) throw new Error();
       const data: ChatResponse = await res.json();
-      const { reply, action } = data;
+      const { reply, action, fallbackPlaces } = data;
+
+      if (fallbackPlaces && fallbackPlaces.length > 0) {
+        const cards: ChatCard[] = fallbackPlaces.map((place, idx) => ({
+          type: "external_place",
+          id: `external-${idx}-${place.name}`,
+          name: place.name,
+          image: getRestaurantImage(place.name, "Restaurant"),
+          subtitle: `${place.distanceMiles.toFixed(1)} mi${place.address ? ` • ${place.address}` : ""}`,
+          mapUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+            `${place.latitude},${place.longitude}`
+          )}`,
+        }));
+        addAssistantMessage(reply || "Closest places found near you.", cards);
+        return;
+      }
 
       if (action?.action === "add_to_cart" && action.restaurant && action.items) {
         const target = restaurants.find(
@@ -527,7 +547,11 @@ export default function Home() {
         } else {
           const rId = items[0]?.restaurantId;
           if (!rId) { setStatusMessage("⚠️ Invalid restaurant"); return; }
-          await saveOrder(rId, action.delivery_address);
+          await saveOrder(rId, action.delivery_address, {
+            deliveryFee,
+            tip,
+            promoCode: promoCode.trim() || undefined,
+          });
           setStatusMessage("🚗 Your order is confirmed and on the way.");
           addAssistantMessage(`✅ Order confirmed! Your driver is heading to ${action.delivery_address}.`);
           return;
@@ -557,7 +581,11 @@ export default function Home() {
     if (!id) return;
     try {
       setCheckoutError(null);
-      await saveOrder(id, deliveryAddress);
+      await saveOrder(id, deliveryAddress, {
+        deliveryFee,
+        tip,
+        promoCode: promoCode.trim() || undefined,
+      });
 
       // Award reward points
       const earned = 100 + Math.floor(orderTotal);
@@ -672,7 +700,7 @@ export default function Home() {
 
       <main className="flex min-h-0 flex-1 overflow-hidden">
         {/* ── Sidebar ── */}
-        <aside className="hidden w-56 shrink-0 flex-col border-r border-orange-200 dark:border-orange-900/20 bg-gradient-to-b from-white via-orange-50/50 to-white dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 md:flex shadow-lg">
+        <aside className="hidden min-h-0 w-56 shrink-0 flex-col overflow-y-auto border-r border-orange-200 bg-gradient-to-b from-white via-orange-50/50 to-white shadow-lg dark:border-orange-900/20 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 md:flex">
           <div className="p-6">
             {/* User Avatar */}
             <div className="w-12 h-12 rounded-full bg-gradient-to-br from-orange-500 to-rose-600 flex items-center justify-center text-white text-lg font-black shadow-lg mx-auto mb-3">
@@ -1031,7 +1059,7 @@ export default function Home() {
                                     >
                                       View Menu
                                     </button>
-                                  ) : (
+                                  ) : card.type === "item" ? (
                                     <button
                                       onClick={() => {
                                         if (!card.itemData || card.restaurantId == null) return;
@@ -1053,6 +1081,15 @@ export default function Home() {
                                     >
                                       Add to Cart
                                     </button>
+                                  ) : (
+                                    <a
+                                      href={card.mapUrl}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="block w-full rounded-lg bg-gradient-to-r from-blue-500 to-cyan-600 hover:from-blue-600 hover:to-cyan-700 py-1.5 text-center text-xs font-bold text-white transition-all"
+                                    >
+                                      Open in Maps
+                                    </a>
                                   )}
                                 </div>
                               </div>
@@ -1304,8 +1341,14 @@ export default function Home() {
 
         {/* ── Cart panel ── */}
         {isOpen && (
-          <div className="flex min-h-0 w-96 shrink-0 flex-col border-l-2 border-orange-200 dark:border-orange-900/20 bg-gradient-to-b from-amber-50 via-orange-50 to-amber-100 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 shadow-2xl">
-            <div className="flex items-center justify-between border-b-2 border-orange-200 dark:border-orange-900/20 bg-gradient-to-r from-orange-500 to-red-600 px-6 py-4 text-white shadow-lg">
+          <>
+            <button
+              onClick={() => setIsOpen(false)}
+              aria-label="Close cart overlay"
+              className="fixed inset-0 z-30 bg-black/40 backdrop-blur-[1px] md:hidden"
+            />
+            <div className="fixed inset-0 z-40 flex min-h-0 w-full flex-col border-orange-200 dark:border-orange-900/20 bg-gradient-to-b from-amber-50 via-orange-50 to-amber-100 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 shadow-2xl md:static md:z-auto md:w-96 md:shrink-0 md:border-l-2">
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b-2 border-orange-200 dark:border-orange-900/20 bg-gradient-to-r from-orange-500 to-red-600 px-6 py-4 text-white shadow-lg">
               <h2 className="text-lg font-bold">🛒 Your Cart</h2>
               <button
                 onClick={() => setIsOpen(false)}
@@ -1316,57 +1359,58 @@ export default function Home() {
               </button>
             </div>
 
-            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
-              {items.length === 0 ? (
-                <div className="mt-12 text-center space-y-3">
-                  <p className="text-4xl">🍕</p>
-                  <p className="text-sm text-zinc-500 font-medium">Your cart is empty</p>
-                  <p className="text-xs text-zinc-400">Start adding items from restaurants</p>
-                </div>
-              ) : (
-                items.map((item) => (
-                  <div key={item.id} className="flex items-center gap-3 rounded-lg border border-orange-200/50 dark:border-orange-900/30 bg-gradient-to-r from-white to-orange-50 dark:from-slate-800 dark:to-slate-900 p-3 hover:shadow-md transition-all">
-                    <Image
-                      src={item.image}
-                      alt={item.name}
-                      width={48}
-                      height={48}
-                      className="rounded-lg object-cover w-12 h-12"
-                    />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold text-gray-900 dark:text-white">{item.name}</p>
-                      <p className="text-xs font-bold text-orange-600 dark:text-orange-400">{fmt(item.price)}</p>
-                    </div>
-                    <div className="flex items-center gap-1.5 bg-orange-100 dark:bg-orange-900/30 rounded-lg px-2 py-1">
-                      <button
-                        onClick={() => updateQuantity(item.id, item.quantity - 1)}
-                        aria-label="Decrease quantity"
-                        className="flex h-5 w-5 items-center justify-center text-xs font-bold hover:bg-white/50 rounded transition-all leading-none"
-                      >
-                        −
-                      </button>
-                      <span className="w-5 text-center text-sm font-bold">{item.quantity}</span>
-                      <button
-                        onClick={() => updateQuantity(item.id, item.quantity + 1)}
-                        aria-label="Increase quantity"
-                        className="flex h-5 w-5 items-center justify-center text-xs font-bold hover:bg-white/50 rounded transition-all leading-none"
-                      >
-                        +
-                      </button>
-                    </div>
-                    <button
-                      onClick={() => removeItem(item.id)}
-                      className="text-xs text-zinc-400 hover:text-red-500 font-bold transition-colors"
-                    >
-                      ✕
-                    </button>
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              <div className="space-y-3 p-4">
+                {items.length === 0 ? (
+                  <div className="mt-12 text-center space-y-3">
+                    <p className="text-4xl">🍕</p>
+                    <p className="text-sm text-zinc-500 font-medium">Your cart is empty</p>
+                    <p className="text-xs text-zinc-400">Start adding items from restaurants</p>
                   </div>
-                ))
-              )}
-            </div>
+                ) : (
+                  items.map((item) => (
+                    <div key={item.id} className="flex items-center gap-3 rounded-lg border border-orange-200/50 dark:border-orange-900/30 bg-gradient-to-r from-white to-orange-50 dark:from-slate-800 dark:to-slate-900 p-3 hover:shadow-md transition-all">
+                      <Image
+                        src={item.image}
+                        alt={item.name}
+                        width={48}
+                        height={48}
+                        className="rounded-lg object-cover w-12 h-12"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold text-gray-900 dark:text-white">{item.name}</p>
+                        <p className="text-xs font-bold text-orange-600 dark:text-orange-400">{fmt(item.price)}</p>
+                      </div>
+                      <div className="flex items-center gap-1.5 bg-orange-100 dark:bg-orange-900/30 rounded-lg px-2 py-1">
+                        <button
+                          onClick={() => updateQuantity(item.id, item.quantity - 1)}
+                          aria-label="Decrease quantity"
+                          className="flex h-5 w-5 items-center justify-center text-xs font-bold hover:bg-white/50 rounded transition-all leading-none"
+                        >
+                          −
+                        </button>
+                        <span className="w-5 text-center text-sm font-bold">{item.quantity}</span>
+                        <button
+                          onClick={() => updateQuantity(item.id, item.quantity + 1)}
+                          aria-label="Increase quantity"
+                          className="flex h-5 w-5 items-center justify-center text-xs font-bold hover:bg-white/50 rounded transition-all leading-none"
+                        >
+                          +
+                        </button>
+                      </div>
+                      <button
+                        onClick={() => removeItem(item.id)}
+                        className="text-xs text-zinc-400 hover:text-red-500 font-bold transition-colors"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
 
-            {items.length > 0 && (
-              <div className="shrink-0 space-y-4 border-t-2 border-orange-200 dark:border-orange-900/20 bg-gradient-to-r from-amber-100 via-orange-50 to-amber-100 dark:from-slate-800 dark:via-slate-800 dark:to-slate-900 p-4">
+              {items.length > 0 && (
+                <div className="shrink-0 space-y-4 border-t-2 border-orange-200 dark:border-orange-900/20 bg-gradient-to-r from-amber-100 via-orange-50 to-amber-100 dark:from-slate-800 dark:via-slate-800 dark:to-slate-900 p-4">
                 <div className="space-y-2">
                   <div className="flex justify-between text-sm font-medium">
                     <span className="text-gray-700 dark:text-gray-300">Subtotal</span>
@@ -1498,9 +1542,11 @@ export default function Home() {
                     Clear cart
                   </button>
                 </div>
-              </div>
-            )}
-          </div>
+                </div>
+              )}
+            </div>
+            </div>
+          </>
         )}
       </main>
     </div>

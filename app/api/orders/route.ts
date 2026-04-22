@@ -1,32 +1,80 @@
 import { NextResponse } from "next/server";
 import { supabase } from "../../lib/supabase";
 import type { CartItem } from "../../context/CartContext";
+import { calculatePromoDiscount } from "../../lib/promo";
 
 export async function POST(request: Request) {
   const body = (await request.json()) as {
+    userId?: string;
     customerId?: string;
     restaurantId?: string | number;
     items?: CartItem[];
     totalPrice?: number;
     deliveryFee?: number;
+    tip?: number;
+    promoCode?: string;
     deliveryAddress?: string;
   };
-  const { customerId, restaurantId, items, totalPrice, deliveryFee, deliveryAddress } = body;
+  const {
+    userId,
+    customerId,
+    restaurantId,
+    items,
+    totalPrice,
+    deliveryFee,
+    tip,
+    promoCode,
+    deliveryAddress,
+  } = body;
 
-  if (!customerId || !restaurantId || !items || !deliveryAddress) {
+  if (!userId || !customerId || !restaurantId || !items || !deliveryAddress) {
     return NextResponse.json(
-      { error: "customerId, restaurantId, items, and deliveryAddress required" },
+      { error: "userId, customerId, restaurantId, items, and deliveryAddress required" },
       { status: 400 }
     );
   }
 
   try {
+    const { data: customer, error: customerError } = await supabase
+      .from("customers")
+      .select("id")
+      .eq("id", customerId)
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (customerError) throw customerError;
+    if (!customer) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    const subtotal = Number.isFinite(totalPrice) ? Number(totalPrice) : 0;
+    const normalizedDeliveryFee = Number.isFinite(deliveryFee) ? Number(deliveryFee) : 2.5;
+    const normalizedTip = Number.isFinite(tip) ? Number(tip) : 0;
+
+    let promoDiscount = 0;
+    if (promoCode?.trim()) {
+      const { count, error: countError } = await supabase
+        .from("orders")
+        .select("id", { count: "exact", head: true })
+        .eq("customer_id", customerId);
+      if (countError) throw countError;
+
+      const promoResult = calculatePromoDiscount(promoCode, subtotal, normalizedDeliveryFee, {
+        isFirstOrder: (count ?? 0) === 0,
+      });
+      if (!promoResult.valid) {
+        return NextResponse.json({ error: promoResult.error ?? "Invalid promo code." }, { status: 400 });
+      }
+      promoDiscount = promoResult.discount;
+    }
+
+    const finalTotal = Math.max(0, subtotal + normalizedDeliveryFee + normalizedTip - promoDiscount);
+
     const { error } = await supabase.from("orders").insert({
       customer_id: customerId,
       restaurant_id: String(restaurantId),
       items,
-      total_price: totalPrice ?? 0,
-      delivery_fee: deliveryFee ?? 2.5,
+      total_price: finalTotal,
+      delivery_fee: normalizedDeliveryFee,
       status: "pending",
       delivery_address: deliveryAddress,
     });
@@ -68,11 +116,22 @@ export async function GET(request: Request) {
     resolvedCustomerId = customer?.id ?? null;
   }
 
-  if (!resolvedCustomerId) {
-    return NextResponse.json({ error: "customerId or userId required" }, { status: 400 });
+  if (!resolvedCustomerId || !userId) {
+    return NextResponse.json({ error: "userId required" }, { status: 400 });
   }
 
   try {
+    const { data: customer, error: customerError } = await supabase
+      .from("customers")
+      .select("id")
+      .eq("id", resolvedCustomerId)
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (customerError) throw customerError;
+    if (!customer) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
     const { data, error } = await supabase
       .from("orders")
       .select("*")

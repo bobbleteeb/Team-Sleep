@@ -4,7 +4,6 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/app/context/AuthContext";
 import { useState, useEffect } from "react";
 import { useTheme } from "@/app/context/ThemeContext";
-import { Switch } from "@/components/ui/switch";
 
 export default function ProfilePage() {
   const router = useRouter();
@@ -197,11 +196,13 @@ export default function ProfilePage() {
                   <span className="text-lg">🌙</span>
                   <span className="font-medium">Dark Mode</span>
                 </div>
-                <Switch
-                  checked={theme === "dark"}
-                  onCheckedChange={() => toggleTheme()}
+                <button
+                  onClick={toggleTheme}
+                  className="rounded-lg border border-stone-200 dark:border-stone-700 px-3 py-1.5 text-xs font-bold hover:bg-stone-50 dark:hover:bg-stone-700/40 transition-colors"
                   aria-label="Toggle dark mode"
-                />
+                >
+                  {theme === "dark" ? "On" : "Off"}
+                </button>
               </div>
             )}
             <div className="flex items-center justify-between p-3 rounded-lg border border-stone-200 dark:border-stone-700">
@@ -209,14 +210,19 @@ export default function ProfilePage() {
                 <span className="text-lg">🔔</span>
                 <span className="font-medium">Notifications</span>
               </div>
-              <Switch
-                checked={notificationsEnabled}
-                onCheckedChange={(checked) => {
-                  setNotificationsEnabled(checked);
-                  localStorage.setItem("quickbite_notifications_enabled", String(checked));
+              <button
+                onClick={() => {
+                  setNotificationsEnabled((prev) => {
+                    const next = !prev;
+                    localStorage.setItem("quickbite_notifications_enabled", String(next));
+                    return next;
+                  });
                 }}
+                className="rounded-lg border border-stone-200 dark:border-stone-700 px-3 py-1.5 text-xs font-bold hover:bg-stone-50 dark:hover:bg-stone-700/40 transition-colors"
                 aria-label="Toggle notifications"
-              />
+              >
+                {notificationsEnabled ? "On" : "Off"}
+              </button>
             </div>
           </div>
         </div>

@@ -2,7 +2,30 @@
 
 import { createContext, useContext, useState, ReactNode, useEffect } from "react";
 import { useAuth } from "./AuthContext";
-import { supabase } from "../lib/supabase";
+
+const formatError = (error: unknown) => {
+  if (!error || typeof error !== "object") {
+    return { message: String(error ?? "Unknown error") };
+  }
+
+  const err = error as {
+    code?: string;
+    message?: string;
+    details?: string;
+    hint?: string;
+    status?: number;
+    name?: string;
+  };
+
+  return {
+    name: err.name,
+    code: err.code,
+    status: err.status,
+    message: err.message,
+    details: err.details,
+    hint: err.hint,
+  };
+};
 
 export interface CartItem {
   id: string;
@@ -30,7 +53,15 @@ interface CartContextType {
   totalPrice: number;
   isOpen: boolean;
   setIsOpen: (open: boolean) => void;
-  saveOrder: (restaurantId: string, deliveryAddress: string) => Promise<void>;
+  saveOrder: (
+    restaurantId: string,
+    deliveryAddress: string,
+    extras?: {
+      deliveryFee?: number;
+      tip?: number;
+      promoCode?: string;
+    }
+  ) => Promise<void>;
   isLoading: boolean;
   restaurantId: string | null;
   setRestaurantId: (id: string) => void;
@@ -63,56 +94,48 @@ export function CartProvider({ children }: { children: ReactNode }) {
       }
 
       try {
-        // Get customer record for this user
-        const { data: customer, error } = await supabase
-          .from("customers")
-          .select("id")
-          .eq("user_id", user.id)
-          .single();
+        const customerResponse = await fetch(
+          `/api/cart/customer?userId=${encodeURIComponent(user.id)}`
+        );
 
-        if (error && error.code === "PGRST116") {
-          // Customer doesn't exist yet, create it
-          const { data: newCustomer, error: createError } = await supabase
-            .from("customers")
-            .insert([{ user_id: user.id }])
-            .select("id")
-            .single();
+        if (!customerResponse.ok) {
+          const errText = await customerResponse.text();
+          throw new Error(errText || "Could not fetch customer");
+        }
 
-          if (createError) {
-            console.error("Could not create customer, continuing without persistence:", createError);
-            setIsLoading(false);
-            return;
-          }
+        const customerData = (await customerResponse.json()) as {
+          customerId?: string;
+        };
 
-          if (newCustomer?.id) {
-            setCustomerId(newCustomer.id);
-          }
-        } else if (error) {
-          console.error("Could not fetch customer, continuing without persistence:", error);
-          setIsLoading(false);
-          return;
-        } else if (customer?.id) {
-          setCustomerId(customer.id);
+        if (!customerData.customerId) {
+          throw new Error("Customer ID missing from response");
+        }
 
-          // Load cart from Supabase
-          try {
-            const response = await fetch(`/api/cart?customerId=${customer.id}`);
-            if (response.ok) {
-              const data = (await response.json()) as { items?: CartItem[] };
-              if (data.items && data.items.length > 0) {
-                setItems(data.items);
-                // Set restaurant from first item
-                if (data.items[0]) {
-                  setRestaurantId(String(data.items[0].restaurantId));
-                }
-              }
+        setCustomerId(customerData.customerId);
+
+        // Load cart from API
+        try {
+          const response = await fetch(
+            `/api/cart?customerId=${customerData.customerId}&userId=${encodeURIComponent(user.id)}`
+          );
+          if (response.ok) {
+            const data = (await response.json()) as { items?: CartItem[] };
+            const normalizedItems = Array.isArray(data.items) ? data.items : [];
+            setItems(normalizedItems);
+            if (normalizedItems[0]) {
+              setRestaurantId(String(normalizedItems[0].restaurantId));
+            } else {
+              setRestaurantId(null);
             }
-          } catch (cartErr) {
-            console.error("Could not load cart from DB:", cartErr);
           }
+        } catch (cartErr) {
+          console.error("Could not load cart from DB:", formatError(cartErr));
         }
       } catch (err) {
-        console.error("Error initializing cart (app will work without persistence):", err);
+        console.error(
+          "Error initializing cart (app will work without persistence):",
+          formatError(err)
+        );
       } finally {
         setIsLoading(false);
       }
@@ -124,13 +147,15 @@ export function CartProvider({ children }: { children: ReactNode }) {
   // Save cart to Supabase whenever items change
   useEffect(() => {
     if (!customerId || !restaurantId) return;
+    if (!user?.id) return;
+    const userId = user.id;
 
     const saveCart = async () => {
       try {
         await fetch("/api/cart", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ customerId, restaurantId, items }),
+          body: JSON.stringify({ customerId, userId, restaurantId, items }),
         });
       } catch (err) {
         console.error("Error saving cart:", err);
@@ -139,7 +164,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
     const timer = setTimeout(saveCart, 500);
     return () => clearTimeout(timer);
-  }, [items, customerId, restaurantId]);
+  }, [items, customerId, restaurantId, user]);
 
   const addItem = (newItem: Omit<CartItem, "quantity">) => {
     // Queue a switch confirmation if cart contains another restaurant.
@@ -200,9 +225,20 @@ export function CartProvider({ children }: { children: ReactNode }) {
     setRestaurantId(null);
   };
 
-  const saveOrder = async (restaurantId: string, deliveryAddress: string) => {
+  const saveOrder = async (
+    restaurantId: string,
+    deliveryAddress: string,
+    extras?: {
+      deliveryFee?: number;
+      tip?: number;
+      promoCode?: string;
+    }
+  ) => {
     if (!customerId) {
       throw new Error("Account not ready. Please refresh and try again.");
+    }
+    if (!user) {
+      throw new Error("You must be logged in to place an order.");
     }
     if (items.length === 0) return;
 
@@ -211,10 +247,14 @@ export function CartProvider({ children }: { children: ReactNode }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          userId: user.id,
           customerId,
           restaurantId,
           items,
           totalPrice,
+          deliveryFee: extras?.deliveryFee,
+          tip: extras?.tip,
+          promoCode: extras?.promoCode,
           deliveryAddress,
         }),
       });
@@ -228,7 +268,10 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
       clearCart();
       // Delete the cart from DB
-      await fetch(`/api/cart?customerId=${customerId}`, { method: "DELETE" });
+      await fetch(
+        `/api/cart?customerId=${customerId}&userId=${encodeURIComponent(user.id)}`,
+        { method: "DELETE" }
+      );
     } catch (err) {
       console.error("Error saving order:", err);
       if (err instanceof Error) throw err;

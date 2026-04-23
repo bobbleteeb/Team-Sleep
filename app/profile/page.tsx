@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/app/context/AuthContext";
 import { useState, useEffect } from "react";
 import { useTheme } from "@/app/context/ThemeContext";
+import { Switch } from "@/components/ui/switch";
 
 export default function ProfilePage() {
   const router = useRouter();
@@ -17,6 +18,7 @@ export default function ProfilePage() {
     Array<{ id: string; name: string; address: string }>
   >([]);
   const [newAddress, setNewAddress] = useState({ name: "", address: "" });
+  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
 
   useEffect(() => {
     setMounted(true);
@@ -24,6 +26,8 @@ export default function ProfilePage() {
     // Load addresses from localStorage
     const stored = localStorage.getItem("quickbite_addresses");
     if (stored) setSavedAddresses(JSON.parse(stored));
+    const notif = localStorage.getItem("quickbite_notifications_enabled");
+    if (notif != null) setNotificationsEnabled(notif === "true");
   }, [user]);
 
   const handleSaveName = async () => {
@@ -193,20 +197,11 @@ export default function ProfilePage() {
                   <span className="text-lg">🌙</span>
                   <span className="font-medium">Dark Mode</span>
                 </div>
-                <button
-                  onClick={toggleTheme}
-                  className={`w-12 h-6 rounded-full transition-all ${
-                    theme === "dark"
-                      ? "bg-gradient-to-r from-orange-500 to-red-600"
-                      : "bg-stone-300 dark:bg-stone-600"
-                  }`}
-                >
-                  <div
-                    className={`w-5 h-5 rounded-full bg-white transition-transform ${
-                      theme === "dark" ? "translate-x-6" : "translate-x-0.5"
-                    }`}
-                  />
-                </button>
+                <Switch
+                  checked={theme === "dark"}
+                  onCheckedChange={() => toggleTheme()}
+                  aria-label="Toggle dark mode"
+                />
               </div>
             )}
             <div className="flex items-center justify-between p-3 rounded-lg border border-stone-200 dark:border-stone-700">
@@ -214,9 +209,14 @@ export default function ProfilePage() {
                 <span className="text-lg">🔔</span>
                 <span className="font-medium">Notifications</span>
               </div>
-              <button className="w-12 h-6 rounded-full bg-gradient-to-r from-orange-500 to-red-600 transition-all">
-                <div className="w-5 h-5 rounded-full bg-white translate-x-6" />
-              </button>
+              <Switch
+                checked={notificationsEnabled}
+                onCheckedChange={(checked) => {
+                  setNotificationsEnabled(checked);
+                  localStorage.setItem("quickbite_notifications_enabled", String(checked));
+                }}
+                aria-label="Toggle notifications"
+              />
             </div>
           </div>
         </div>

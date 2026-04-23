@@ -89,7 +89,10 @@ CREATE TABLE IF NOT EXISTS orders (
   items JSONB NOT NULL,
   total_price DECIMAL(10, 2) NOT NULL,
   delivery_fee DECIMAL(10, 2) NOT NULL,
-  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'confirmed', 'preparing', 'ready', 'in_transit', 'delivered', 'cancelled')),
+  eta TEXT,
+  tip DECIMAL(10, 2) NOT NULL DEFAULT 0,
+  dropoff_instructions TEXT,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'confirmed', 'preparing', 'ready', 'arrived_at_restaurant', 'picked_up', 'arrived_at_customer', 'in_transit', 'delivered', 'cancelled')),
   delivery_address TEXT NOT NULL,
   notes TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -98,6 +101,11 @@ CREATE TABLE IF NOT EXISTS orders (
   FOREIGN KEY (driver_id) REFERENCES drivers(id) ON DELETE SET NULL,
   FOREIGN KEY (restaurant_id) REFERENCES restaurants(id) ON DELETE CASCADE
 );
+
+-- Backward-compatible migrations for databases created before new order fields existed.
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS eta TEXT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS tip DECIMAL(10, 2) NOT NULL DEFAULT 0;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS dropoff_instructions TEXT;
 
 -- Create restaurant cache table to store fetched restaurants by city/location
 CREATE TABLE IF NOT EXISTS restaurant_cache (

@@ -3,6 +3,12 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../../context/AuthContext";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Separator } from "@/components/ui/separator";
 
 type DriverProfile = {
   id: string;
@@ -89,74 +95,96 @@ export default function DriverProfilePage() {
     <div className="min-h-screen bg-gradient-to-br from-zinc-50 via-white to-zinc-100 dark:from-black dark:via-zinc-950 dark:to-zinc-900 text-zinc-900 dark:text-zinc-100">
       <header className="border-b border-zinc-200 dark:border-zinc-800 bg-white/90 dark:bg-black/90 backdrop-blur px-6 py-4">
         <div className="mx-auto max-w-4xl flex items-center gap-4">
-          <button onClick={() => router.back()} className="text-sm font-semibold">← Back</button>
+          <Button variant="outline" onClick={() => router.back()}>
+            ← Back
+          </Button>
           <h1 className="text-2xl font-black">👤 Driver Profile</h1>
         </div>
       </header>
 
       <main className="mx-auto max-w-4xl p-6 space-y-6">
-        {message && <div className="rounded-lg border border-zinc-300 dark:border-zinc-700 p-3 text-sm font-semibold">{message}</div>}
+        {message && (
+          <Alert>
+            <AlertDescription>{message}</AlertDescription>
+          </Alert>
+        )}
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-4">
-            <p className="text-xs uppercase tracking-wider text-zinc-500">Rating</p>
-            <p className="text-2xl font-black mt-2">{(profile?.rating ?? 5).toFixed(1)} ⭐</p>
-          </div>
-          <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-4">
-            <p className="text-xs uppercase tracking-wider text-zinc-500">Rides</p>
-            <p className="text-2xl font-black mt-2">{profile?.total_deliveries ?? 0}</p>
-          </div>
-          <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-4">
-            <p className="text-xs uppercase tracking-wider text-zinc-500">Total Earned</p>
-            <p className="text-2xl font-black mt-2">{fmt((profile?.total_deliveries ?? 0) * 8.5)}</p>
-          </div>
-          <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-4">
-            <p className="text-xs uppercase tracking-wider text-zinc-500">Completion</p>
-            <p className="text-2xl font-black mt-2">98%</p>
-          </div>
+          <Card>
+            <CardContent className="py-4">
+              <p className="text-xs uppercase tracking-wider text-muted-foreground">Rating</p>
+              <p className="text-2xl font-black mt-2">{(profile?.rating ?? 5).toFixed(1)} ⭐</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="py-4">
+              <p className="text-xs uppercase tracking-wider text-muted-foreground">Rides</p>
+              <p className="text-2xl font-black mt-2">{profile?.total_deliveries ?? 0}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="py-4">
+              <p className="text-xs uppercase tracking-wider text-muted-foreground">Total Earned</p>
+              <p className="text-2xl font-black mt-2">{fmt((profile?.total_deliveries ?? 0) * 8.5)}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="py-4">
+              <p className="text-xs uppercase tracking-wider text-muted-foreground">Completion</p>
+              <p className="text-2xl font-black mt-2">98%</p>
+            </CardContent>
+          </Card>
         </div>
 
-        <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-5 space-y-4">
-          <h2 className="text-lg font-bold">Vehicle Info</h2>
-          <input
-            value={vehicleInfo}
-            onChange={(e) => setVehicleInfo(e.target.value)}
-            placeholder="Vehicle info"
-            className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm"
-          />
-          <input
-            value={licenseNumber}
-            onChange={(e) => setLicenseNumber(e.target.value)}
-            placeholder="License number"
-            className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm"
-          />
-          <button
-            onClick={save}
-            disabled={saving}
-            className="rounded-lg bg-black text-white px-4 py-2 text-sm font-bold dark:bg-white dark:text-black disabled:opacity-50"
-          >
-            {saving ? "Saving..." : "Save Changes"}
-          </button>
-        </div>
+        <Card>
+          <CardHeader className="border-b">
+            <CardTitle>Vehicle Info</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4 py-5">
+            <Input
+              value={vehicleInfo}
+              onChange={(e) => setVehicleInfo(e.target.value)}
+              placeholder="Vehicle info"
+            />
+            <Input
+              value={licenseNumber}
+              onChange={(e) => setLicenseNumber(e.target.value)}
+              placeholder="License number"
+            />
+            <Button onClick={save} disabled={saving}>
+              {saving ? "Saving..." : "Save Changes"}
+            </Button>
+          </CardContent>
+        </Card>
 
-        <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-5 space-y-3">
-          <p className="font-semibold">Currently: {profile?.status === "offline" ? "⚫ Offline" : "🟢 Online"}</p>
-          <button
-            onClick={toggleOnline}
-            className="rounded-lg border border-zinc-300 dark:border-zinc-700 px-4 py-2 text-sm font-bold"
-          >
-            {profile?.status === "offline" ? "Go Online" : "Go Offline"}
-          </button>
-          <button
-            onClick={() => {
-              logout();
-              router.push("/login");
-            }}
-            className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-bold text-white"
-          >
-            🚪 Log Out
-          </button>
-        </div>
+        <Card>
+          <CardHeader className="border-b">
+            <CardTitle>Status</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4 py-5">
+            <div className="flex items-center justify-between gap-3">
+              <p className="font-semibold">Currently</p>
+              <Badge variant={profile?.status === "offline" ? "outline" : "default"}>
+                {profile?.status === "offline" ? "⚫ Offline" : "🟢 Online"}
+              </Badge>
+            </div>
+            <Separator />
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" onClick={toggleOnline}>
+                {profile?.status === "offline" ? "Go Online" : "Go Offline"}
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={() => {
+                  logout();
+                  router.push("/login");
+                }}
+              >
+                🚪 Log Out
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
       </main>
     </div>
   );

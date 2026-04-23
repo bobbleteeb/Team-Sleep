@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import { supabase } from "../../../lib/supabase";
+import { getSupabaseServiceClient } from "../../../lib/supabaseService";
 
 const ACTIVE_DRIVER_STATUSES = ["confirmed", "preparing", "ready", "in_transit"];
 
 async function getDriverByUserId(userId: string) {
-  const { data: driver, error } = await supabase
+  const client = getSupabaseServiceClient() ?? supabase;
+  const { data: driver, error } = await client
     .from("drivers")
     .select("id, user_id, vehicle_info, license_number, status, rating, total_deliveries")
     .eq("user_id", userId)
@@ -38,6 +40,7 @@ export async function GET(request: Request) {
 
 export async function PUT(request: Request) {
   try {
+    const client = getSupabaseServiceClient() ?? supabase;
     const body = (await request.json()) as {
       driverId?: string;
       online?: boolean;
@@ -59,7 +62,7 @@ export async function PUT(request: Request) {
 
     if (online === false) {
       // Prevent going offline while currently delivering.
-      const { data: activeRows, error: activeError } = await supabase
+      const { data: activeRows, error: activeError } = await client
         .from("orders")
         .select("id")
         .eq("driver_id", driver.id)
@@ -97,7 +100,7 @@ export async function PUT(request: Request) {
       payload.license_number = licenseNumber.trim();
     }
 
-    const { data, error } = await supabase
+    const { data, error } = await client
       .from("drivers")
       .update(payload)
       .eq("id", driver.id)

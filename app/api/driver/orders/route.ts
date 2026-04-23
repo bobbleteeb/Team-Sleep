@@ -1,13 +1,47 @@
 import { NextResponse } from "next/server";
 import { supabase } from "../../../lib/supabase";
+import { getSupabaseServiceClient } from "../../../lib/supabaseService";
 
-const ACTIVE_DRIVER_STATUSES = ["confirmed", "preparing", "ready", "in_transit"];
+const ACTIVE_DRIVER_STATUSES = [
+  "confirmed",
+  "preparing",
+  "ready",
+  "arrived_at_restaurant",
+  "picked_up",
+  "in_transit",
+  "arrived_at_customer",
+];
+
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value
+  );
+}
+
+async function getDriverByUserId(userId: string) {
+  const client = getSupabaseServiceClient() ?? supabase;
+  const { data: driver, error } = await client
+    .from("drivers")
+    .select("id, status, rating, total_deliveries, vehicle_info, license_number")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (error) throw error;
+  return driver;
+}
 
 // GET: /api/driver/orders -> list pending/unassigned orders
 export async function GET(request: Request) {
   try {
+    const client = getSupabaseServiceClient() ?? supabase;
     const { searchParams } = new URL(request.url);
-    const driverUserId = searchParams.get("driverId");
+    const userId = searchParams.get("userId");
+    if (!userId) {
+      return NextResponse.json({ error: "userId required" }, { status: 400 });
+    }
+    if (!isUuid(userId)) {
+      return NextResponse.json({ error: "Invalid userId" }, { status: 400 });
+    }
 
     let activeOrder: Record<string, unknown> | null = null;
     let driver: Record<string, unknown> | null = null;
@@ -18,65 +52,56 @@ export async function GET(request: Request) {
       activeDeliveries: 0,
     };
 
-    if (driverUserId) {
-      const { data: driverData, error: driverError } = await supabase
-        .from("drivers")
-        .select("id, status, rating, total_deliveries, vehicle_info, license_number")
-        .eq("user_id", driverUserId)
-        .maybeSingle();
+    const driverData = await getDriverByUserId(userId);
+    if (driverData?.id) {
+      driver = driverData;
 
-      if (driverError) throw driverError;
+      const { data: activeOrderRows, error: activeError } = await client
+        .from("orders")
+        .select("id, delivery_address, items, total_price, status, created_at, eta, notes")
+        .eq("driver_id", driverData.id)
+        .in("status", ACTIVE_DRIVER_STATUSES)
+        .order("created_at", { ascending: false })
+        .limit(1);
 
-      if (driverData?.id) {
-        driver = driverData;
+      if (activeError) throw activeError;
+      activeOrder = activeOrderRows?.[0] ?? null;
 
-        const { data: activeOrderRows, error: activeError } = await supabase
-          .from("orders")
-          .select("id, delivery_address, items, total_price, status, created_at")
-          .eq("driver_id", driverData.id)
-          .in("status", ACTIVE_DRIVER_STATUSES)
-          .order("created_at", { ascending: false })
-          .limit(1);
+      const { data: deliveredRows, error: deliveredError } = await client
+        .from("orders")
+        .select("total_price, created_at")
+        .eq("driver_id", driverData.id)
+        .eq("status", "delivered");
 
-        if (activeError) throw activeError;
-        activeOrder = activeOrderRows?.[0] ?? null;
+      if (deliveredError) throw deliveredError;
 
-        const { data: deliveredRows, error: deliveredError } = await supabase
-          .from("orders")
-          .select("total_price, created_at")
-          .eq("driver_id", driverData.id)
-          .eq("status", "delivered");
+      const today = new Date();
+      const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
 
-        if (deliveredError) throw deliveredError;
+      const delivered = deliveredRows ?? [];
+      const totalEarnings = delivered.reduce(
+        (sum, row) => sum + Number(row.total_price ?? 0),
+        0
+      );
+      const todayEarnings = delivered.reduce((sum, row) => {
+        const createdAt = row.created_at ? new Date(row.created_at) : null;
+        if (createdAt && createdAt >= todayStart) {
+          return sum + Number(row.total_price ?? 0);
+        }
+        return sum;
+      }, 0);
 
-        const today = new Date();
-        const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-
-        const delivered = deliveredRows ?? [];
-        const totalEarnings = delivered.reduce(
-          (sum, row) => sum + Number(row.total_price ?? 0),
-          0
-        );
-        const todayEarnings = delivered.reduce((sum, row) => {
-          const createdAt = row.created_at ? new Date(row.created_at) : null;
-          if (createdAt && createdAt >= todayStart) {
-            return sum + Number(row.total_price ?? 0);
-          }
-          return sum;
-        }, 0);
-
-        stats = {
-          todayEarnings,
-          totalEarnings,
-          completedDeliveries: delivered.length,
-          activeDeliveries: activeOrder ? 1 : 0,
-        };
-      }
+      stats = {
+        todayEarnings,
+        totalEarnings,
+        completedDeliveries: delivered.length,
+        activeDeliveries: activeOrder ? 1 : 0,
+      };
     }
 
-    const { data, error } = await supabase
+    const { data, error } = await client
       .from("orders")
-      .select("id, delivery_address, items, total_price, status, created_at")
+      .select("id, delivery_address, items, total_price, status, created_at, eta")
       .eq("status", "pending")
       .is("driver_id", null)
       .order("created_at", { ascending: true });
@@ -99,24 +124,21 @@ export async function GET(request: Request) {
 // POST: /api/driver/orders/accept -> body: { orderId, driverId (user id) }
 export async function POST(request: Request) {
   try {
+    const client = getSupabaseServiceClient() ?? supabase;
     const body = await request.json();
-    const { orderId, driverId } = body as { orderId?: string; driverId?: string };
+    const { orderId, userId } = body as { orderId?: string; userId?: string };
     if (!orderId) {
       return NextResponse.json({ error: "orderId required" }, { status: 400 });
     }
 
-    if (!driverId) {
-      return NextResponse.json({ error: "driverId (your user id) required in this demo" }, { status: 400 });
+    if (!userId) {
+      return NextResponse.json({ error: "userId required" }, { status: 400 });
+    }
+    if (!isUuid(userId)) {
+      return NextResponse.json({ error: "Invalid userId" }, { status: 400 });
     }
 
-    // Find the driver record that matches the provided user id
-    const { data: driverData, error: driverError } = await supabase
-      .from("drivers")
-      .select("id, status")
-      .eq("user_id", driverId)
-      .maybeSingle();
-
-    if (driverError) throw driverError;
+    const driverData = await getDriverByUserId(userId);
 
     const driverUuid = driverData?.id;
     if (!driverUuid) {
@@ -131,7 +153,7 @@ export async function POST(request: Request) {
     }
 
     // One-order-at-a-time: block accepts while this driver still has an active order.
-    const { data: activeRows, error: activeError } = await supabase
+    const { data: activeRows, error: activeError } = await client
       .from("orders")
       .select("id, status")
       .eq("driver_id", driverUuid)
@@ -148,7 +170,7 @@ export async function POST(request: Request) {
     }
 
     // Claim only pending/unassigned orders and move them to a valid next status.
-    const { data, error } = await supabase
+    const { data, error } = await client
       .from("orders")
       .update({ driver_id: driverUuid, status: "confirmed" })
       .eq("id", orderId)
@@ -165,7 +187,7 @@ export async function POST(request: Request) {
       );
     }
 
-    await supabase
+    await client
       .from("drivers")
       .update({ status: "busy", updated_at: new Date().toISOString() })
       .eq("id", driverUuid);
@@ -180,41 +202,55 @@ export async function POST(request: Request) {
 // PATCH: /api/driver/orders -> body: { orderId, driverId, status }
 export async function PATCH(request: Request) {
   try {
+    const client = getSupabaseServiceClient() ?? supabase;
     const body = await request.json();
-    const { orderId, driverId, status } = body as {
+    const { orderId, userId, status } = body as {
       orderId?: string;
-      driverId?: string;
+      userId?: string;
       status?: string;
+      eta?: string;
       proofNote?: string;
       proofPhotoUrl?: string;
     };
+    const eta = typeof body.eta === "string" ? body.eta.trim() : "";
     const proofNote = typeof body.proofNote === "string" ? body.proofNote.trim() : "";
     const proofPhotoUrl =
       typeof body.proofPhotoUrl === "string" ? body.proofPhotoUrl.trim() : "";
 
-    if (!orderId || !driverId || !status) {
+    if (!orderId || !userId || !status) {
       return NextResponse.json(
-        { error: "orderId, driverId, and status are required" },
+        { error: "orderId, userId, and status are required" },
         { status: 400 }
       );
     }
+    if (!isUuid(userId)) {
+      return NextResponse.json({ error: "Invalid userId" }, { status: 400 });
+    }
 
-    if (!["in_transit", "delivered", "cancelled"].includes(status)) {
+    if (
+      ![
+        "in_transit",
+        "delivered",
+        "cancelled",
+        "arrived_at_restaurant",
+        "picked_up",
+        "arrived_at_customer",
+      ].includes(status)
+    ) {
       return NextResponse.json(
         { error: "Unsupported status transition" },
         { status: 400 }
       );
     }
 
-    const { data: driverData, error: driverError } = await supabase
+    const { data: driverForUpdate, error: driverForUpdateError } = await client
       .from("drivers")
-      .select("id, total_deliveries")
-      .eq("user_id", driverId)
+      .select("id, total_deliveries, status")
+      .eq("user_id", userId)
       .maybeSingle();
+    if (driverForUpdateError) throw driverForUpdateError;
 
-    if (driverError) throw driverError;
-
-    const driverUuid = driverData?.id;
+    const driverUuid = driverForUpdate?.id;
     if (!driverUuid) {
       return NextResponse.json({ error: "No driver profile found for this user" }, { status: 400 });
     }
@@ -225,12 +261,15 @@ export async function PATCH(request: Request) {
       status === "delivered" ? `Delivered at: ${new Date().toISOString()}` : "",
     ].filter(Boolean);
 
-    const updatePayload: { status: string; notes?: string } = { status };
+    const updatePayload: { status: string; notes?: string; eta?: string } = { status };
     if (notesParts.length > 0) {
       updatePayload.notes = notesParts.join("\n");
     }
+    if (eta) {
+      updatePayload.eta = eta;
+    }
 
-    const { data, error } = await supabase
+    const { data, error } = await client
       .from("orders")
       .update(updatePayload)
       .eq("id", orderId)
@@ -248,18 +287,18 @@ export async function PATCH(request: Request) {
     }
 
     if (status === "delivered") {
-      await supabase
+      await client
         .from("drivers")
         .update({
           status: "available",
-          total_deliveries: Number(driverData.total_deliveries ?? 0) + 1,
+          total_deliveries: Number(driverForUpdate?.total_deliveries ?? 0) + 1,
           updated_at: new Date().toISOString(),
         })
         .eq("id", driverUuid);
     }
 
     if (status === "cancelled") {
-      await supabase
+      await client
         .from("drivers")
         .update({ status: "available", updated_at: new Date().toISOString() })
         .eq("id", driverUuid);

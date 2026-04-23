@@ -2,9 +2,12 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useMemo, useState, useEffect, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useCallback, useMemo, useState, useEffect, useRef } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import DriverDashboard from "./components/DriverDashboard";
+import { OrderTrackingView } from "./components/OrderTrackingView";
+import { AccountNav } from "./components/AccountNav";
+import { MobileAccountDrawer } from "./components/MobileAccountDrawer";
 import { useCart } from "./context/CartContext";
 import { useAuth } from "./context/AuthContext";
 import { useTheme } from "./context/ThemeContext";
@@ -111,7 +114,14 @@ type PastOrder = {
   created_at: string;
 };
 
-type SidebarView = "none" | "past-orders" | "saved-meals" | "recently-viewed";
+type SidebarView = "none" | "active-orders" | "past-orders" | "saved-meals" | "recently-viewed";
+
+type OrderMessage = {
+  id: string;
+  sender_role: "customer" | "driver";
+  content: string;
+  created_at: string;
+};
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -159,10 +169,14 @@ function findCards(reply: string, restaurants: Restaurant[]): ChatCard[] {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function Home() {
+function HomeInner() {
   const { user, logout, isLoading: authLoading } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  const [focusedOrderId, setFocusedOrderId] = useState<string | null>(null);
+  const homeScrollYRef = useRef<number>(0);
 
   // Location
   const [userLocation, setUserLocation] = useState<Location | null>(null);
@@ -183,6 +197,16 @@ export default function Home() {
   const [pastOrders, setPastOrders] = useState<PastOrder[]>([]);
   const [loadingOrders, setLoadingOrders] = useState(false);
 
+  // Active orders
+  const [activeOrders, setActiveOrders] = useState<PastOrder[]>([]);
+  const [loadingActiveOrders, setLoadingActiveOrders] = useState(false);
+  const [expandedChatOrderId, setExpandedChatOrderId] = useState<string | null>(null);
+  const [orderMessagesById, setOrderMessagesById] = useState<Record<string, OrderMessage[]>>({});
+  const [orderChatInputById, setOrderChatInputById] = useState<Record<string, string>>({});
+  const [sendingOrderMsgById, setSendingOrderMsgById] = useState<Record<string, boolean>>({});
+  const [unreadDriverMsgsById, setUnreadDriverMsgsById] = useState<Record<string, number>>({});
+  const lastSeenMessageIdByOrderId = useRef<Record<string, string | null>>({});
+
   // Saved meals (localStorage)
   const [savedMeals, setSavedMeals] = useState<SavedMeal[]>([]);
 
@@ -198,6 +222,7 @@ export default function Home() {
 
   // Checkout
   const [deliveryAddress, setDeliveryAddress] = useState("");
+  const [dropoffInstructions, setDropoffInstructions] = useState("");
   const [orderSuccess, setOrderSuccess] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const [tip, setTip] = useState(0);
@@ -334,7 +359,9 @@ export default function Home() {
   // ─── Derived ──────────────────────────────────────────────────────────────
 
   const selectedRestaurant = useMemo(
-    () => restaurants.find((r) => r.id === selectedRestaurantId) ?? restaurants[0],
+    () =>
+      restaurants.find((r) => r.id === selectedRestaurantId) ??
+      (restaurants.length > 0 ? restaurants[0] : undefined),
     [selectedRestaurantId, restaurants]
   );
   const deliveryFee = items.length > 0 ? (selectedRestaurant?.deliveryFee ?? 0) : 0;
@@ -342,6 +369,7 @@ export default function Home() {
   const restaurantGridClass = isOpen
     ? "grid gap-4 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
     : "grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5";
+  const restaurantSkeletonCount = isOpen ? 8 : 10;
 
   // ─── Saved meals ──────────────────────────────────────────────────────────
 
@@ -414,13 +442,125 @@ export default function Home() {
     }
   };
 
+  const loadActiveOrders = async () => {
+    if (!user) return;
+    setLoadingActiveOrders(true);
+    try {
+      const res = await fetch(`/api/orders?userId=${user.id}`);
+      if (res.ok) {
+        const data = await res.json();
+        const all = Array.isArray(data.orders) ? (data.orders as PastOrder[]) : [];
+        const next = all.filter((o) => o.status !== "delivered" && o.status !== "cancelled");
+        setActiveOrders(next);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoadingActiveOrders(false);
+    }
+  };
+
+  const fetchOrderMessages = async (orderId: string) => {
+    if (!user) return;
+    try {
+      const res = await fetch(`/api/messages?orderId=${orderId}&userId=${user.id}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      const nextMessages = (data.messages ?? []) as OrderMessage[];
+
+      setOrderMessagesById((prev) => ({ ...prev, [orderId]: nextMessages }));
+
+      const lastSeen = lastSeenMessageIdByOrderId.current[orderId] ?? null;
+      const lastIndex = lastSeen ? nextMessages.findIndex((m) => m.id === lastSeen) : -1;
+      const newSlice = lastIndex >= 0 ? nextMessages.slice(lastIndex + 1) : [];
+      const newDriver = newSlice.filter((m) => m.sender_role === "driver");
+
+      if (expandedChatOrderId !== orderId && newDriver.length > 0) {
+        setUnreadDriverMsgsById((prev) => ({
+          ...prev,
+          [orderId]: (prev[orderId] ?? 0) + newDriver.length,
+        }));
+      }
+
+      if (expandedChatOrderId === orderId && nextMessages.length > 0) {
+        lastSeenMessageIdByOrderId.current[orderId] = nextMessages[nextMessages.length - 1]?.id ?? null;
+        setUnreadDriverMsgsById((prev) => ({ ...prev, [orderId]: 0 }));
+      } else if (!lastSeen && nextMessages.length > 0) {
+        // Initialize so we don't mark historical messages as unread.
+        lastSeenMessageIdByOrderId.current[orderId] = nextMessages[nextMessages.length - 1]?.id ?? null;
+      }
+    } catch (e) {
+      console.error("Failed to fetch messages:", e);
+    }
+  };
+
+  const sendOrderMessage = async (orderId: string) => {
+    if (!user) return;
+    const content = (orderChatInputById[orderId] ?? "").trim();
+    if (!content) return;
+    if (sendingOrderMsgById[orderId]) return;
+
+    setSendingOrderMsgById((prev) => ({ ...prev, [orderId]: true }));
+    try {
+      await fetch("/api/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          orderId,
+          userId: user.id,
+          senderRole: "customer",
+          content,
+        }),
+      });
+      setOrderChatInputById((prev) => ({ ...prev, [orderId]: "" }));
+      await fetchOrderMessages(orderId);
+    } catch (e) {
+      console.error("Failed to send message:", e);
+    } finally {
+      setSendingOrderMsgById((prev) => ({ ...prev, [orderId]: false }));
+    }
+  };
+
   // ─── Sidebar toggle ───────────────────────────────────────────────────────
 
-  const toggleSidebar = (view: SidebarView) => {
-    const next = sidebarView === view ? "none" : view;
-    setSidebarView(next);
-    if (next === "past-orders") loadPastOrders();
-  };
+  const openPanel = useCallback((view: Exclude<SidebarView, "none">) => {
+    // open panel + persist in URL so mobile/refresh stays aligned
+    const next = new URLSearchParams(searchParams.toString());
+    next.set("panel", view);
+    router.replace(`/?${next.toString()}`);
+    setSidebarView(view);
+    if (view === "past-orders") loadPastOrders();
+    if (view === "active-orders") loadActiveOrders();
+  }, [router, searchParams]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const closePanel = useCallback(() => {
+    const next = new URLSearchParams(searchParams.toString());
+    next.delete("panel");
+    const qs = next.toString();
+    router.replace(qs ? `/?${qs}` : "/");
+    setSidebarView("none");
+  }, [router, searchParams]);
+
+  // Poll messages only for expanded chat (demo-friendly)
+  useEffect(() => {
+    if (!user || !expandedChatOrderId) return;
+    fetchOrderMessages(expandedChatOrderId);
+    const interval = setInterval(() => fetchOrderMessages(expandedChatOrderId), 5000);
+    return () => clearInterval(interval);
+  }, [expandedChatOrderId, user]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Keep active order presence up to date so we can hide/show the entry.
+  useEffect(() => {
+    if (!user) return;
+    loadActiveOrders();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (sidebarView === "active-orders" && activeOrders.length === 0 && !loadingActiveOrders) {
+      closePanel();
+    }
+  }, [sidebarView, activeOrders.length, loadingActiveOrders, closePanel]);
 
   // ─── Reorder ──────────────────────────────────────────────────────────────
 
@@ -435,7 +575,7 @@ export default function Home() {
       }
     }
     setIsOpen(true);
-    setSidebarView("none");
+    closePanel();
   };
 
   // ─── Chat ─────────────────────────────────────────────────────────────────
@@ -467,7 +607,7 @@ export default function Home() {
     setChatLoading(true);
     setStatusMessage(null);
     // Keep current panel selections while sending a message
-    setSidebarView("none");
+    closePanel();
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         scrollToChatSection();
@@ -547,10 +687,24 @@ export default function Home() {
         } else {
           const rId = items[0]?.restaurantId;
           if (!rId) { setStatusMessage("⚠️ Invalid restaurant"); return; }
+          const restaurantSnapshot = selectedRestaurant
+            ? {
+                name: selectedRestaurant.name,
+                cuisine: selectedRestaurant.cuisine,
+                address: selectedRestaurant.address,
+                latitude: selectedRestaurant.latitude,
+                longitude: selectedRestaurant.longitude,
+                deliveryFee: selectedRestaurant.deliveryFee,
+                eta: selectedRestaurant.eta,
+                image: selectedRestaurant.image,
+              }
+            : undefined;
           await saveOrder(rId, action.delivery_address, {
             deliveryFee,
             tip,
+            dropoffInstructions: dropoffInstructions.trim() || undefined,
             promoCode: promoCode.trim() || undefined,
+            restaurantSnapshot,
           });
           setStatusMessage("🚗 Your order is confirmed and on the way.");
           addAssistantMessage(`✅ Order confirmed! Your driver is heading to ${action.delivery_address}.`);
@@ -584,7 +738,20 @@ export default function Home() {
       await saveOrder(id, deliveryAddress, {
         deliveryFee,
         tip,
+        dropoffInstructions: dropoffInstructions.trim() || undefined,
         promoCode: promoCode.trim() || undefined,
+        restaurantSnapshot: selectedRestaurant
+          ? {
+              name: selectedRestaurant.name,
+              cuisine: selectedRestaurant.cuisine,
+              address: selectedRestaurant.address,
+              latitude: selectedRestaurant.latitude,
+              longitude: selectedRestaurant.longitude,
+              deliveryFee: selectedRestaurant.deliveryFee,
+              eta: selectedRestaurant.eta,
+              image: selectedRestaurant.image,
+            }
+          : undefined,
       });
 
       // Award reward points
@@ -598,10 +765,13 @@ export default function Home() {
       const timeNote = scheduledTime ? ` Scheduled for ${new Date(scheduledTime).toLocaleString()}.` : "";
       setStatusMessage(`🚗 Order confirmed!${timeNote} +${earned} pts earned!`);
       setDeliveryAddress("");
+      setDropoffInstructions("");
       setPromoCode("");
       setPromoDiscount(0);
       setScheduledTime("");
       setSplitCount(1);
+      setSidebarView("active-orders");
+      loadActiveOrders();
       setTimeout(() => setOrderSuccess(false), 4000);
     } catch (err) {
       setCheckoutError(
@@ -612,23 +782,35 @@ export default function Home() {
 
   // ─── Guards ───────────────────────────────────────────────────────────────
 
+  useEffect(() => {
+    // Deep-link: /?orderId=<id>&view=tracking
+    // NOTE: useSearchParams is stable and updates on navigation.
+    const orderId = searchParams.get("orderId");
+    const view = searchParams.get("view");
+    if (orderId && view === "tracking") {
+      setFocusedOrderId(orderId);
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
+    const panel = searchParams.get("panel") as SidebarView | null;
+    if (!panel) {
+      if (sidebarView !== "none") setSidebarView("none");
+      return;
+    }
+    if (panel === "none") return;
+    if (panel !== sidebarView) {
+      setSidebarView(panel);
+      if (panel === "past-orders") loadPastOrders();
+      if (panel === "active-orders") loadActiveOrders();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
   if (user?.role === "driver") return <DriverDashboard />;
   if (authLoading || !user) return null;
 
-  if (loadingRestaurants) {
-    return (
-      <div className="flex h-screen items-center justify-center bg-gradient-to-br from-background via-background to-zinc-100 dark:to-zinc-950">
-        <div className="space-y-4 text-center">
-          <div className="mx-auto h-12 w-12 animate-spin rounded-full bg-gradient-to-r from-orange-500 via-red-500 to-purple-500 p-1">
-            <div className="h-full w-full rounded-full bg-background dark:bg-slate-900" />
-          </div>
-          <p className="text-lg font-semibold bg-gradient-to-r from-orange-600 to-red-600 bg-clip-text text-transparent">Loading restaurants near you...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (locationError || restaurants.length === 0) {
+  if (!loadingRestaurants && (locationError || restaurants.length === 0)) {
     return (
       <div className="flex h-screen items-center justify-center bg-gradient-to-br from-background via-background to-zinc-100 dark:to-zinc-950">
         <div className="space-y-4 rounded-xl border-2 border-red-200 dark:border-red-900/30 bg-gradient-to-br from-red-50 to-orange-50 dark:from-red-900/10 dark:to-orange-900/10 p-8 text-center">
@@ -651,6 +833,24 @@ export default function Home() {
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-gradient-to-br from-amber-50 via-orange-50/70 to-amber-100/80 text-foreground dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
+      {/* Full-screen tracking view (inside /) */}
+      {focusedOrderId && (
+        <div className="fixed inset-0 z-[70] bg-background">
+          <OrderTrackingView
+            orderId={focusedOrderId}
+            onClose={() => {
+              setFocusedOrderId(null);
+              const next = new URLSearchParams(searchParams.toString());
+              next.delete("orderId");
+              next.delete("view");
+              const qs = next.toString();
+              router.replace(qs ? `/?${qs}` : "/");
+              window.scrollTo({ top: homeScrollYRef.current, behavior: "auto" });
+            }}
+          />
+        </div>
+      )}
+
       {/* Header */}
       <header className="relative overflow-hidden border-b border-orange-200 dark:border-orange-900/20 bg-gradient-to-r from-amber-50 via-orange-50 to-amber-100 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 px-6 py-5 shadow-lg">
         <div className="absolute inset-0 opacity-30 bg-gradient-to-r from-orange-400/10 via-red-400/10 to-purple-400/10 dark:from-orange-500/5 dark:to-purple-500/5 pointer-events-none" />
@@ -672,6 +872,11 @@ export default function Home() {
             </div>
           </div>
           <div className="flex items-center gap-3">
+            <MobileAccountDrawer
+              userName={user?.name}
+              sidebarView={sidebarView}
+              onSelectView={openPanel}
+            />
             <button onClick={toggleTheme} aria-label="Toggle dark mode"
               className="rounded-full border-2 border-orange-200 dark:border-orange-700 w-10 h-10 flex items-center justify-center text-lg bg-gradient-to-r from-orange-50 to-red-50 dark:from-orange-900/20 dark:to-red-900/20 hover:from-orange-100 hover:to-red-100 dark:hover:from-orange-900/40 dark:hover:to-red-900/40 shadow-md hover:shadow-lg transition-all">
               {theme === "dark" ? "☀️" : "🌙"}
@@ -701,64 +906,7 @@ export default function Home() {
       <main className="flex min-h-0 flex-1 overflow-hidden">
         {/* ── Sidebar ── */}
         <aside className="hidden min-h-0 w-56 shrink-0 flex-col overflow-y-auto border-r border-orange-200 bg-gradient-to-b from-white via-orange-50/50 to-white shadow-lg dark:border-orange-900/20 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 md:flex">
-          <div className="p-6">
-            {/* User Avatar */}
-            <div className="w-12 h-12 rounded-full bg-gradient-to-br from-orange-500 to-rose-600 flex items-center justify-center text-white text-lg font-black shadow-lg mx-auto mb-3">
-              {user?.name?.[0]?.toUpperCase() || "U"}
-            </div>
-            <p className="text-center font-bold text-sm truncate text-foreground mb-4">{user?.name || "User"}</p>
-            <p className="mb-4 text-xs font-bold uppercase tracking-widest bg-gradient-to-r from-orange-600 to-red-600 bg-clip-text text-transparent">
-              🔥 My Account
-            </p>
-            <div className="space-y-2">
-              {(
-                [
-                  { view: "past-orders", label: "Past Orders", icon: "🧾" },
-                  { view: "saved-meals", label: "Saved Meals", icon: "❤️" },
-                  { view: "recently-viewed", label: "Recently Viewed", icon: "🕐" },
-                ] as { view: SidebarView; label: string; icon: string }[]
-              ).map(({ view, label, icon }) => (
-                <button
-                  key={view}
-                  onClick={() => toggleSidebar(view)}
-                  className={`flex w-full items-center gap-3 rounded-lg px-4 py-3 text-sm font-medium transition-all ${
-                    sidebarView === view
-                      ? "bg-gradient-to-r from-orange-500 to-red-600 text-white shadow-lg shadow-orange-500/30"
-                      : "hover:bg-gradient-to-r hover:from-orange-100 hover:to-red-100 dark:hover:from-orange-900/30 dark:hover:to-red-900/30"
-                  }`}
-                >
-                  <span className="text-lg">{icon}</span>
-                  {label}
-                </button>
-              ))}
-            </div>
-            <div className="mt-4 space-y-2 border-t border-orange-200 dark:border-orange-900/20 pt-4">
-              <Link
-                href="/orders/history"
-                className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-sm font-medium hover:bg-gradient-to-r hover:from-orange-100 hover:to-red-100 dark:hover:from-orange-900/30 dark:hover:to-red-900/30 transition-all"
-              >
-                🧾 Order History
-              </Link>
-              <Link
-                href="/rewards"
-                className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-sm font-medium hover:bg-gradient-to-r hover:from-orange-100 hover:to-red-100 dark:hover:from-orange-900/30 dark:hover:to-red-900/30 transition-all"
-              >
-                🏆 Rewards
-              </Link>
-              <Link
-                href="/deals"
-                className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-sm font-medium hover:bg-gradient-to-r hover:from-orange-100 hover:to-red-100 dark:hover:from-orange-900/30 dark:hover:to-red-900/30 transition-all"
-              >
-                🎟 Deals
-              </Link>
-              <Link
-                href="/profile"
-                className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-sm font-medium hover:bg-gradient-to-r hover:from-orange-100 hover:to-red-100 dark:hover:from-orange-900/30 dark:hover:to-red-900/30 transition-all"
-              >
-                ⚙️ Settings
-              </Link>
-            </div>
-          </div>
+          <AccountNav userName={user?.name} sidebarView={sidebarView} onSelectView={openPanel} />
         </aside>
 
         {/* ── Main content ── */}
@@ -771,7 +919,7 @@ export default function Home() {
                 <div className="space-y-4">
                   <div className="flex items-center gap-3">
                     <button
-                      onClick={() => setSidebarView("none")}
+                      onClick={closePanel}
                       className="text-sm font-semibold text-orange-600 hover:text-orange-700 dark:text-orange-400 transition-colors"
                     >
                       ← Back
@@ -845,12 +993,19 @@ export default function Home() {
                               "ready",
                               "in_transit",
                             ].includes(order.status) && (
-                              <Link
-                                href={`/orders/${order.id}`}
+                              <button
+                                onClick={() => {
+                                  homeScrollYRef.current = window.scrollY;
+                                  setFocusedOrderId(order.id);
+                                  const next = new URLSearchParams(searchParams.toString());
+                                  next.set("orderId", order.id);
+                                  next.set("view", "tracking");
+                                  router.replace(`/?${next.toString()}`);
+                                }}
                                 className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700 dark:border-blue-900/30 dark:bg-blue-900/20 dark:text-blue-300"
                               >
                                 📍 Track Order
-                              </Link>
+                              </button>
                             )}
                             {order.status === "delivered" && (
                               <Link
@@ -874,12 +1029,150 @@ export default function Home() {
                 </div>
               )}
 
+              {/* Active Orders */}
+              {sidebarView === "active-orders" && (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={closePanel}
+                      className="text-sm font-semibold text-orange-600 hover:text-orange-700 dark:text-orange-400 transition-colors"
+                    >
+                      ← Back
+                    </button>
+                    <h2 className="text-2xl font-bold bg-gradient-to-r from-orange-600 to-red-600 bg-clip-text text-transparent">
+                      🚗 Active Orders
+                    </h2>
+                  </div>
+
+                  {loadingActiveOrders ? (
+                    <div className="flex justify-center py-12">
+                      <div className="h-6 w-6 animate-spin rounded-full border-4 border-orange-300 border-t-orange-600" />
+                    </div>
+                  ) : activeOrders.length === 0 ? (
+                    <div className="rounded-xl border-2 border-dashed border-orange-200 dark:border-orange-900/30 bg-gradient-to-br from-orange-50 to-red-50 dark:from-orange-900/10 dark:to-red-900/10 p-12 text-center">
+                      <p className="mb-2 text-4xl">🚗</p>
+                      <p className="font-semibold text-gray-700 dark:text-gray-300">No active orders</p>
+                      <p className="mt-1 text-xs text-stone-500 dark:text-stone-400">
+                        Place an order to see live status here.
+                      </p>
+                    </div>
+                  ) : (
+                    activeOrders.map((order) => {
+                      const isExpanded = expandedChatOrderId === order.id;
+                      const msgs = orderMessagesById[order.id] ?? [];
+                      const unread = unreadDriverMsgsById[order.id] ?? 0;
+                      return (
+                        <div
+                          key={order.id}
+                          className="space-y-3 rounded-xl border-2 border-orange-200/50 dark:border-orange-900/30 bg-gradient-to-br from-white to-orange-50 dark:from-slate-800 dark:to-slate-900 p-4 hover:shadow-lg transition-all"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="font-bold text-lg text-gray-900 dark:text-white">
+                                {order.items[0]?.restaurantName ?? "Restaurant"}
+                              </p>
+                              <p className="text-xs text-stone-500 dark:text-stone-400">
+                                {new Date(order.created_at).toLocaleString()}
+                              </p>
+                            </div>
+                            <span className="rounded-full px-3 py-1 text-xs font-bold bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
+                              {order.status.replaceAll("_", " ").toUpperCase()}
+                            </span>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-2 border-t border-orange-200/50 dark:border-orange-900/30 pt-3">
+                            <button
+                              onClick={() => {
+                                homeScrollYRef.current = window.scrollY;
+                                setFocusedOrderId(order.id);
+                                const next = new URLSearchParams(searchParams.toString());
+                                next.set("orderId", order.id);
+                                next.set("view", "tracking");
+                                router.replace(`/?${next.toString()}`);
+                              }}
+                              className="rounded-lg bg-gradient-to-r from-blue-500 to-cyan-600 hover:from-blue-600 hover:to-cyan-700 px-4 py-2 text-xs font-bold text-white transition-all"
+                            >
+                              📍 Track
+                            </button>
+                            <button
+                              onClick={() => {
+                                setExpandedChatOrderId((prev) => (prev === order.id ? null : order.id));
+                                setUnreadDriverMsgsById((prev) => ({ ...prev, [order.id]: 0 }));
+                              }}
+                              className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-xs font-bold text-blue-700 dark:border-blue-900/30 dark:bg-blue-900/20 dark:text-blue-300"
+                            >
+                              💬 Message{unread > 0 ? ` (${unread})` : ""}
+                            </button>
+                            <button
+                              onClick={() => loadActiveOrders()}
+                              className="ml-auto rounded-lg border border-orange-200 bg-white px-3 py-2 text-xs font-bold text-orange-700 dark:border-orange-900/30 dark:bg-slate-800 dark:text-orange-300"
+                            >
+                              Refresh
+                            </button>
+                          </div>
+
+                          {isExpanded && (
+                            <div className="rounded-xl border border-blue-200 dark:border-blue-800 bg-white dark:bg-slate-900 overflow-hidden">
+                              <div className="bg-blue-600 text-white px-4 py-2 text-sm font-bold">
+                                💬 Chat
+                              </div>
+                              <div className="h-48 overflow-y-auto p-3 space-y-2">
+                                {msgs.length === 0 ? (
+                                  <p className="text-xs text-stone-400 text-center py-6">
+                                    No messages yet. Send a message to your driver!
+                                  </p>
+                                ) : (
+                                  msgs.map((msg) => (
+                                    <div
+                                      key={msg.id}
+                                      className={`flex ${msg.sender_role === "customer" ? "justify-end" : "justify-start"}`}
+                                    >
+                                      <div
+                                        className={`max-w-xs rounded-2xl px-3 py-2 text-xs font-medium ${
+                                          msg.sender_role === "customer"
+                                            ? "bg-gradient-to-r from-orange-500 to-red-600 text-white rounded-tr-sm"
+                                            : "bg-stone-100 dark:bg-stone-700 text-foreground rounded-tl-sm"
+                                        }`}
+                                      >
+                                        {msg.content}
+                                      </div>
+                                    </div>
+                                  ))
+                                )}
+                              </div>
+                              <div className="border-t border-blue-100 dark:border-blue-900 p-2 flex gap-2">
+                                <input
+                                  value={orderChatInputById[order.id] ?? ""}
+                                  onChange={(e) =>
+                                    setOrderChatInputById((prev) => ({ ...prev, [order.id]: e.target.value }))
+                                  }
+                                  onKeyDown={(e) => e.key === "Enter" && sendOrderMessage(order.id)}
+                                  placeholder="Type a message..."
+                                  className="flex-1 rounded-full border border-stone-200 dark:border-stone-700 bg-white dark:bg-slate-800 px-3 py-1.5 text-xs outline-none focus:border-blue-400"
+                                />
+                                <button
+                                  onClick={() => sendOrderMessage(order.id)}
+                                  disabled={sendingOrderMsgById[order.id] || !(orderChatInputById[order.id] ?? "").trim()}
+                                  className="px-3 py-1.5 rounded-full bg-blue-600 text-white text-xs font-bold disabled:opacity-50"
+                                >
+                                  Send
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              )}
+
               {/* Saved Meals */}
               {sidebarView === "saved-meals" && (
                 <div className="space-y-4">
                   <div className="flex items-center gap-3">
                     <button
-                      onClick={() => setSidebarView("none")}
+                      onClick={closePanel}
                       className="text-sm font-semibold text-orange-600 hover:text-orange-700 dark:text-orange-400 transition-colors"
                     >
                       ← Back
@@ -954,7 +1247,7 @@ export default function Home() {
                 <div className="space-y-4">
                   <div className="flex items-center gap-3">
                     <button
-                      onClick={() => setSidebarView("none")}
+                      onClick={closePanel}
                       className="text-sm font-semibold text-orange-600 hover:text-orange-700 dark:text-orange-400 transition-colors"
                     >
                       ← Back
@@ -991,7 +1284,7 @@ export default function Home() {
                               onClick={() => {
                                 setSelectedRestaurantId(r.id);
                                 setAiView("menu");
-                                setSidebarView("none");
+                                closePanel();
                               }}
                               className="w-full rounded-lg bg-gradient-to-r from-orange-500 to-red-600 hover:from-orange-600 hover:to-red-700 py-2 text-xs font-bold text-white transition-all"
                             >
@@ -1011,6 +1304,17 @@ export default function Home() {
                   <h2 ref={chatSectionRef} className="text-center text-4xl font-black bg-gradient-to-r from-orange-600 via-red-600 to-orange-500 bg-clip-text text-transparent">
                     What are you craving today?
                   </h2>
+
+                  {loadingRestaurants && restaurants.length === 0 && (
+                    <div className="rounded-xl border border-orange-200/60 dark:border-orange-900/30 bg-white/70 dark:bg-slate-900/40 px-4 py-3 shadow-sm">
+                      <div className="flex items-center gap-3">
+                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-orange-300 border-t-orange-600" />
+                        <p className="text-sm font-semibold text-orange-700 dark:text-orange-300">
+                          Finding restaurants near you…
+                        </p>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Chat messages */}
                   <div ref={chatScrollRef} className="max-h-[42vh] space-y-4 overflow-y-auto pr-1">
@@ -1136,54 +1440,71 @@ export default function Home() {
                         <span className="text-sm text-gray-500 dark:text-gray-400">Sorted by distance</span>
                       </div>
                       <div className={restaurantGridClass}>
-                        {restaurants.map((r, idx) => (
-                          <div
-                            key={r.id}
-                            className="group overflow-hidden rounded-xl border border-orange-200/50 dark:border-orange-900/30 bg-gradient-to-br from-white to-orange-50 dark:from-slate-800 dark:to-slate-900 shadow-md hover:shadow-2xl hover:shadow-orange-500/20 transition-all hover:-translate-y-1 cursor-pointer"
-                          >
-                            <div className="relative overflow-hidden h-32">
-                              <Image
-                                src={r.image}
-                                alt={r.name}
-                                width={300}
-                                height={150}
-                                className="h-full w-full object-cover group-hover:scale-110 transition-transform duration-300"
-                              />
-                              <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-                              <div className="absolute top-2 right-2 bg-orange-600 text-white px-2 py-1 rounded-full text-xs font-bold">
-                                #{idx + 1}
+                        {restaurants.length === 0 ? (
+                          Array.from({ length: restaurantSkeletonCount }).map((_, idx) => (
+                            <div
+                              key={`r-skel-${idx}`}
+                              className="overflow-hidden rounded-xl border border-orange-200/50 dark:border-orange-900/30 bg-gradient-to-br from-white to-orange-50 dark:from-slate-800 dark:to-slate-900 shadow-md"
+                            >
+                              <div className="h-32 w-full animate-pulse bg-orange-100/70 dark:bg-slate-700/60" />
+                              <div className="p-3 space-y-2">
+                                <div className="h-4 w-3/4 animate-pulse rounded bg-orange-100/80 dark:bg-slate-700/60" />
+                                <div className="h-3 w-1/2 animate-pulse rounded bg-orange-100/80 dark:bg-slate-700/60" />
+                                <div className="h-3 w-2/3 animate-pulse rounded bg-orange-100/80 dark:bg-slate-700/60" />
+                                <div className="h-8 w-full animate-pulse rounded-lg bg-orange-200/60 dark:bg-slate-700/70" />
                               </div>
                             </div>
-                            <div className="p-3">
-                              <h3 className="font-bold text-sm mb-1 text-gray-900 dark:text-white line-clamp-2">{r.name}</h3>
-                              <div className="flex flex-col gap-1.5 mb-2">
-                                <div className="flex items-center gap-1 text-xs">
-                                  <span className="inline-block px-2 py-0.5 rounded-full bg-gradient-to-r from-orange-100 to-red-100 dark:from-orange-900/40 dark:to-red-900/40 text-orange-700 dark:text-orange-300 font-semibold">
-                                    {r.cuisine}
-                                  </span>
+                          ))
+                        ) : (
+                          restaurants.map((r, idx) => (
+                            <div
+                              key={r.id}
+                              className="group overflow-hidden rounded-xl border border-orange-200/50 dark:border-orange-900/30 bg-gradient-to-br from-white to-orange-50 dark:from-slate-800 dark:to-slate-900 shadow-md hover:shadow-2xl hover:shadow-orange-500/20 transition-all hover:-translate-y-1 cursor-pointer"
+                            >
+                              <div className="relative overflow-hidden h-32">
+                                <Image
+                                  src={r.image}
+                                  alt={r.name}
+                                  width={300}
+                                  height={150}
+                                  className="h-full w-full object-cover group-hover:scale-110 transition-transform duration-300"
+                                />
+                                <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                                <div className="absolute top-2 right-2 bg-orange-600 text-white px-2 py-1 rounded-full text-xs font-bold">
+                                  #{idx + 1}
                                 </div>
-                                <div className="flex items-center justify-between text-xs text-gray-600 dark:text-gray-400 font-medium">
-                                  <span>⏱️ {r.eta}</span>
-                                  <span>💵 {fmt(r.deliveryFee)} delivery</span>
-                                </div>
-                                {r.distance !== undefined && (
-                                  <div className="text-xs text-blue-600 dark:text-blue-400 font-semibold">
-                                    📍 {r.distance.toFixed(2)} miles away
+                              </div>
+                              <div className="p-3">
+                                <h3 className="font-bold text-sm mb-1 text-gray-900 dark:text-white line-clamp-2">{r.name}</h3>
+                                <div className="flex flex-col gap-1.5 mb-2">
+                                  <div className="flex items-center gap-1 text-xs">
+                                    <span className="inline-block px-2 py-0.5 rounded-full bg-gradient-to-r from-orange-100 to-red-100 dark:from-orange-900/40 dark:to-red-900/40 text-orange-700 dark:text-orange-300 font-semibold">
+                                      {r.cuisine}
+                                    </span>
                                   </div>
-                                )}
+                                  <div className="flex items-center justify-between text-xs text-gray-600 dark:text-gray-400 font-medium">
+                                    <span>⏱️ {r.eta}</span>
+                                    <span>💵 {fmt(r.deliveryFee)} delivery</span>
+                                  </div>
+                                  {r.distance !== undefined && (
+                                    <div className="text-xs text-blue-600 dark:text-blue-400 font-semibold">
+                                      📍 {r.distance.toFixed(2)} miles away
+                                    </div>
+                                  )}
+                                </div>
+                                <button
+                                  onClick={() => {
+                                    setSelectedRestaurantId(r.id);
+                                    setAiView("menu");
+                                  }}
+                                  className="w-full rounded-lg bg-gradient-to-r from-orange-500 to-red-600 hover:from-orange-600 hover:to-red-700 py-2 text-xs font-bold text-white shadow-lg hover:shadow-xl transition-all"
+                                >
+                                  Menu →
+                                </button>
                               </div>
-                              <button
-                                onClick={() => {
-                                  setSelectedRestaurantId(r.id);
-                                  setAiView("menu");
-                                }}
-                                className="w-full rounded-lg bg-gradient-to-r from-orange-500 to-red-600 hover:from-orange-600 hover:to-red-700 py-2 text-xs font-bold text-white shadow-lg hover:shadow-xl transition-all"
-                              >
-                                Menu →
-                              </button>
                             </div>
-                          </div>
-                        ))}
+                          ))
+                        )}
                       </div>
                     </div>
                   )}
@@ -1498,6 +1819,20 @@ export default function Home() {
                     />
                   </div>
 
+                  {/* Dropoff Instructions */}
+                  <div className="space-y-1">
+                    <p className="text-xs font-bold uppercase tracking-widest text-stone-500">
+                      Dropoff Instructions (optional)
+                    </p>
+                    <textarea
+                      value={dropoffInstructions}
+                      onChange={(e) => setDropoffInstructions(e.target.value)}
+                      placeholder="Gate code, leave at door, don’t ring bell, etc..."
+                      rows={2}
+                      className="w-full rounded-lg border-2 border-zinc-200 dark:border-zinc-700 bg-white dark:bg-slate-700 p-3 text-sm font-medium outline-none focus:border-zinc-500 transition-all resize-none"
+                    />
+                  </div>
+
                   {/* Scheduled Delivery */}
                   <div className="space-y-1">
                     <p className="text-xs font-bold uppercase tracking-widest text-stone-500">Schedule Delivery</p>
@@ -1550,5 +1885,14 @@ export default function Home() {
         )}
       </main>
     </div>
+  );
+}
+
+export default function Home() {
+  // `useSearchParams` requires a Suspense boundary in production builds.
+  return (
+    <Suspense fallback={null}>
+      <HomeInner />
+    </Suspense>
   );
 }

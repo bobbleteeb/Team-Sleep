@@ -59,7 +59,18 @@ interface CartContextType {
     extras?: {
       deliveryFee?: number;
       tip?: number;
+      dropoffInstructions?: string;
       promoCode?: string;
+      restaurantSnapshot?: {
+        name: string;
+        cuisine?: string;
+        address?: string;
+        latitude?: number;
+        longitude?: number;
+        deliveryFee?: number;
+        eta?: string;
+        image?: string;
+      };
     }
   ) => Promise<void>;
   isLoading: boolean;
@@ -231,7 +242,18 @@ export function CartProvider({ children }: { children: ReactNode }) {
     extras?: {
       deliveryFee?: number;
       tip?: number;
+      dropoffInstructions?: string;
       promoCode?: string;
+      restaurantSnapshot?: {
+        name: string;
+        cuisine?: string;
+        address?: string;
+        latitude?: number;
+        longitude?: number;
+        deliveryFee?: number;
+        eta?: string;
+        image?: string;
+      };
     }
   ) => {
     if (!customerId) {
@@ -250,10 +272,12 @@ export function CartProvider({ children }: { children: ReactNode }) {
           userId: user.id,
           customerId,
           restaurantId,
+          restaurantSnapshot: extras?.restaurantSnapshot,
           items,
           totalPrice,
           deliveryFee: extras?.deliveryFee,
           tip: extras?.tip,
+          dropoffInstructions: extras?.dropoffInstructions,
           promoCode: extras?.promoCode,
           deliveryAddress,
         }),

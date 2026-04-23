@@ -4,6 +4,13 @@ import { FormEvent, useMemo, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useRouter } from "next/navigation";
 import { useTheme } from "../context/ThemeContext";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
 
 function ForgotPasswordModal({ onClose }: { onClose: () => void }) {
   const [email, setEmail] = useState("");
@@ -22,57 +29,68 @@ function ForgotPasswordModal({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="relative w-full max-w-sm mx-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-8 shadow-2xl">
-        <button
+      <Card className="relative w-full max-w-sm mx-4 shadow-2xl">
+        <CardHeader className="pb-3">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <CardTitle>{sent ? "Check your inbox" : "Reset password"}</CardTitle>
+              {!sent && (
+                <p className="text-sm text-muted-foreground mt-1">
+                  Enter your email and we&apos;ll send you a reset link.
+                </p>
+              )}
+            </div>
+            <Button
+              variant="ghost"
+              size="icon"
           onClick={onClose}
           aria-label="Close"
-          className="absolute right-4 top-4 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 text-xl"
         >
           ✕
-        </button>
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
         {sent ? (
           <div className="text-center space-y-4">
             <p className="text-4xl">📬</p>
-            <h2 className="text-xl font-black text-zinc-900 dark:text-zinc-100">Check your inbox</h2>
             <p className="text-sm text-zinc-500 dark:text-zinc-400">
               If <span className="font-semibold">{email}</span> has an account, you&apos;ll receive a password reset link shortly.
             </p>
-            <button
+            <Button
               onClick={onClose}
-              className="w-full rounded-lg bg-zinc-900 dark:bg-white dark:text-zinc-900 text-white py-3 text-sm font-bold"
+              className="w-full"
             >
               Back to Login
-            </button>
+            </Button>
           </div>
         ) : (
           <>
-            <h2 className="text-xl font-black text-zinc-900 dark:text-zinc-100 mb-1">Reset Password</h2>
-            <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-6">
-              Enter your email and we&apos;ll send you a reset link.
-            </p>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label className="block text-sm font-bold text-zinc-700 dark:text-zinc-300 mb-2">Email</label>
-                <input
+                <label className="block text-sm font-bold text-zinc-700 dark:text-zinc-300 mb-2">
+                  Email
+                </label>
+                <Input
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
-                  className="w-full rounded-lg border-2 border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-4 py-3 text-sm font-medium outline-none focus:border-zinc-600 focus:ring-2 focus:ring-zinc-300/50 dark:focus:border-zinc-500 dark:focus:ring-zinc-500/30 transition-all"
                   placeholder="you@example.com"
                 />
               </div>
-              <button
+              <Button
                 type="submit"
                 disabled={sending}
-                className="w-full rounded-lg bg-zinc-900 hover:bg-black py-3 text-sm font-bold text-white shadow-lg hover:shadow-xl transition-all disabled:opacity-50 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-100"
+                className="w-full"
               >
                 {sending ? "Sending..." : "Send Reset Link"}
-              </button>
+              </Button>
             </form>
           </>
         )}
-      </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }
@@ -127,157 +145,197 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-zinc-50 via-white to-zinc-100 dark:from-zinc-950 dark:via-black dark:to-zinc-900">
       {showForgotPassword && <ForgotPasswordModal onClose={() => setShowForgotPassword(false)} />}
-      <button
+      <Button
         onClick={toggleTheme}
         aria-label="Toggle dark mode"
-        className="absolute right-4 top-4 z-20 h-10 w-10 rounded-full border-2 border-zinc-300 bg-white text-lg dark:border-zinc-700 dark:bg-zinc-900"
+        variant="outline"
+        size="icon"
+        className="absolute right-4 top-4 z-20"
       >
         {theme === "dark" ? "☀️" : "🌙"}
-      </button>
+      </Button>
       <div className="relative w-full max-w-md mx-4">
         <div className="absolute inset-0 bg-gradient-to-r from-zinc-300/30 to-zinc-400/20 blur-3xl rounded-full opacity-60 dark:from-zinc-700/20 dark:to-zinc-800/20" />
         
-        <div className="relative rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-8 shadow-2xl">
-          <div className="text-center mb-8">
-            <h1 className="text-4xl font-black mb-2 bg-gradient-to-r from-zinc-900 via-zinc-700 to-zinc-500 dark:from-zinc-100 dark:via-zinc-300 dark:to-zinc-500 bg-clip-text text-transparent">QuickBite</h1>
-            <p className="text-sm text-zinc-600 dark:text-zinc-400 font-medium">
-              {isSignup
-                ? "Join thousands of food lovers"
-                : "Fast, fresh, delivered"}
-            </p>
-          </div>
-
-          <form onSubmit={handleSubmit} className="mt-6 space-y-4">
-            {isSignup && (
-              <div>
-                <label className="block text-sm font-bold text-zinc-700 dark:text-zinc-300 mb-2">Full Name</label>
-                <input
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  onBlur={() => setTouched((prev) => ({ ...prev, name: true }))}
-                  className="w-full rounded-lg border-2 border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-4 py-3 text-sm font-medium outline-none focus:border-zinc-600 focus:ring-2 focus:ring-zinc-300/50 dark:focus:border-zinc-500 dark:focus:ring-zinc-500/30 transition-all"
-                  required
-                />
-                {touched.name && !nameValid && (
-                  <p className="mt-1 text-xs font-semibold text-red-500">Name is required</p>
-                )}
-              </div>
-            )}
-
-            <div>
-              <label className="block text-sm font-bold text-zinc-700 dark:text-zinc-300 mb-2">Email</label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                onBlur={() => setTouched((prev) => ({ ...prev, email: true }))}
-                className="w-full rounded-lg border-2 border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-4 py-3 text-sm font-medium outline-none focus:border-zinc-600 focus:ring-2 focus:ring-zinc-300/50 dark:focus:border-zinc-500 dark:focus:ring-zinc-500/30 transition-all"
-                required
-              />
-              {touched.email && !emailValid && (
-                <p className="mt-1 text-xs font-semibold text-red-500">Please enter a valid email</p>
-              )}
+        <Card className="relative shadow-2xl">
+          <CardHeader className="text-center">
+            <div className="flex items-center justify-center gap-2">
+              <span className="text-2xl">🍽️</span>
+              <CardTitle className="text-3xl font-black">QuickBite</CardTitle>
             </div>
-
-            <div>
-              <label className="block text-sm font-bold text-zinc-700 dark:text-zinc-300 mb-2">Password</label>
-              <div className="relative">
-                <input
-                  type={showPassword ? "text" : "password"}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  onBlur={() => setTouched((prev) => ({ ...prev, password: true }))}
-                  className="w-full rounded-lg border-2 border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-4 py-3 pr-11 text-sm font-medium outline-none focus:border-zinc-600 focus:ring-2 focus:ring-zinc-300/50 dark:focus:border-zinc-500 dark:focus:ring-zinc-500/30 transition-all"
-                  required
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword((prev) => !prev)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-lg"
-                  aria-label="Toggle password visibility"
-                >
-                  {showPassword ? "🙈" : "👁️"}
-                </button>
-              </div>
-              {isSignup && (
-                <p className={`mt-1 text-xs font-semibold ${passwordValid ? "text-green-600" : "text-zinc-500"}`}>
-                  {passwordValid ? "✓ Strong enough" : "Must be at least 8 characters"}
-                </p>
-              )}
-              {!isSignup && (
-                <button
-                  type="button"
-                  onClick={() => setShowForgotPassword(true)}
-                  className="mt-1 inline-block text-xs text-zinc-500 hover:underline text-left"
-                >
-                  Forgot password?
-                </button>
-              )}
-            </div>
-
-            {isSignup && (
-              <div className="pt-2">
-                <label className="block text-sm font-bold text-zinc-700 dark:text-zinc-300 mb-3">I am a:</label>
-                <div className="space-y-3">
-                  <label className="flex items-center justify-between gap-3 p-3 rounded-lg border-2 border-zinc-300 dark:border-zinc-700 cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-all">
-                    <div>
-                      <p className="font-semibold text-zinc-800 dark:text-zinc-200">🛒 Customer</p>
-                      <p className="text-xs text-zinc-500">Order food</p>
-                    </div>
-                    <input
-                      type="radio"
-                      value="customer"
-                      checked={role === "customer"}
-                      onChange={(e) => setRole(e.target.value as "customer" | "driver")}
-                      className="w-4 h-4"
-                    />
-                  </label>
-                  <label className="flex items-center justify-between gap-3 p-3 rounded-lg border-2 border-zinc-300 dark:border-zinc-700 cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-all">
-                    <div>
-                      <p className="font-semibold text-zinc-800 dark:text-zinc-200">🚗 Driver</p>
-                      <p className="text-xs text-zinc-500">Deliver food</p>
-                    </div>
-                    <input
-                      type="radio"
-                      value="driver"
-                      checked={role === "driver"}
-                      onChange={(e) => setRole(e.target.value as "customer" | "driver")}
-                      className="w-4 h-4"
-                    />
-                  </label>
-                </div>
-              </div>
-            )}
-
-            {(error || localError) && (
-              <div className="rounded-lg border-2 border-red-200 dark:border-red-900/40 bg-red-50 dark:bg-red-900/10 px-4 py-3">
-                <p className="text-sm font-semibold text-red-700 dark:text-red-400">
-                  {error || localError}
-                </p>
-              </div>
-            )}
-
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="w-full rounded-lg bg-zinc-900 hover:bg-black py-3 text-sm font-bold text-white shadow-lg hover:shadow-xl transition-all disabled:opacity-50 mt-6 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-100"
-            >
-              {isLoading ? "Loading..." : isSignup ? "Create Account" : "Login"}
-            </button>
-          </form>
-
-          <div className="mt-6 text-center">
-            <p className="text-sm text-zinc-600 dark:text-zinc-400 mb-2">
-              {isSignup ? "Already have an account?" : "Don't have an account?"}
+            <p className="text-sm text-muted-foreground">
+              Fast, fresh, delivered
             </p>
-            <button
-              onClick={() => setIsSignup(!isSignup)}
-              className="text-sm font-bold text-zinc-900 dark:text-zinc-100 hover:opacity-70 transition-opacity"
+          </CardHeader>
+          <CardContent className="space-y-5">
+            <Tabs
+              value={isSignup ? "signup" : "login"}
+              onValueChange={(v) => setIsSignup(v === "signup")}
             >
-              {isSignup ? "Login" : "Sign Up"}
-            </button>
-          </div>
-        </div>
+              <TabsList className="w-full">
+                <TabsTrigger value="login" className="flex-1">Login</TabsTrigger>
+                <TabsTrigger value="signup" className="flex-1">Sign up</TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="login" className="pt-4">
+                <form onSubmit={handleSubmit} className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-semibold mb-2">Email</label>
+                    <Input
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      onBlur={() => setTouched((prev) => ({ ...prev, email: true }))}
+                      required
+                    />
+                    {touched.email && !emailValid && (
+                      <p className="mt-1 text-xs font-semibold text-destructive">Please enter a valid email</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-semibold mb-2">Password</label>
+                    <div className="relative">
+                      <Input
+                        type={showPassword ? "text" : "password"}
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        onBlur={() => setTouched((prev) => ({ ...prev, password: true }))}
+                        required
+                        className="pr-12"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setShowPassword((prev) => !prev)}
+                        className="absolute right-1 top-1/2 -translate-y-1/2"
+                        aria-label="Toggle password visibility"
+                      >
+                        {showPassword ? "🙈" : "👁️"}
+                      </Button>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="link"
+                      className="px-0 h-auto mt-2 text-xs text-muted-foreground"
+                      onClick={() => setShowForgotPassword(true)}
+                    >
+                      Forgot password?
+                    </Button>
+                  </div>
+
+                  {(error || localError) && (
+                    <Alert variant="destructive">
+                      <AlertDescription>{error || localError}</AlertDescription>
+                    </Alert>
+                  )}
+
+                  <Button type="submit" disabled={isLoading} className="w-full">
+                    {isLoading ? "Loading..." : "Login"}
+                  </Button>
+                </form>
+              </TabsContent>
+
+              <TabsContent value="signup" className="pt-4">
+                <form onSubmit={handleSubmit} className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-semibold mb-2">Full name</label>
+                    <Input
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      onBlur={() => setTouched((prev) => ({ ...prev, name: true }))}
+                      required
+                    />
+                    {touched.name && !nameValid && (
+                      <p className="mt-1 text-xs font-semibold text-destructive">Name is required</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-semibold mb-2">Email</label>
+                    <Input
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      onBlur={() => setTouched((prev) => ({ ...prev, email: true }))}
+                      required
+                    />
+                    {touched.email && !emailValid && (
+                      <p className="mt-1 text-xs font-semibold text-destructive">Please enter a valid email</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-semibold mb-2">Password</label>
+                    <div className="relative">
+                      <Input
+                        type={showPassword ? "text" : "password"}
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        onBlur={() => setTouched((prev) => ({ ...prev, password: true }))}
+                        required
+                        className="pr-12"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setShowPassword((prev) => !prev)}
+                        className="absolute right-1 top-1/2 -translate-y-1/2"
+                        aria-label="Toggle password visibility"
+                      >
+                        {showPassword ? "🙈" : "👁️"}
+                      </Button>
+                    </div>
+                    <div className="mt-2">
+                      <Badge variant={passwordValid ? "default" : "outline"}>
+                        {passwordValid ? "✓ Strong enough" : "Min 8 characters"}
+                      </Badge>
+                    </div>
+                  </div>
+
+                  <div className="pt-1">
+                    <p className="text-sm font-semibold mb-2">I am a:</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Button
+                        type="button"
+                        variant={role === "customer" ? "default" : "outline"}
+                        onClick={() => setRole("customer")}
+                        className="justify-between"
+                      >
+                        🛒 Customer
+                      </Button>
+                      <Button
+                        type="button"
+                        variant={role === "driver" ? "default" : "outline"}
+                        onClick={() => setRole("driver")}
+                        className="justify-between"
+                      >
+                        🚗 Driver
+                      </Button>
+                    </div>
+                  </div>
+
+                  {(error || localError) && (
+                    <Alert variant="destructive">
+                      <AlertDescription>{error || localError}</AlertDescription>
+                    </Alert>
+                  )}
+
+                  <Button type="submit" disabled={isLoading} className="w-full">
+                    {isLoading ? "Loading..." : "Create account"}
+                  </Button>
+                </form>
+              </TabsContent>
+            </Tabs>
+
+            <Separator />
+            <p className="text-xs text-muted-foreground text-center">
+              By continuing you agree to our terms and privacy policy.
+            </p>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

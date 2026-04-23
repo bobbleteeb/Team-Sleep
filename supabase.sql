@@ -89,7 +89,10 @@ CREATE TABLE IF NOT EXISTS orders (
   items JSONB NOT NULL,
   total_price DECIMAL(10, 2) NOT NULL,
   delivery_fee DECIMAL(10, 2) NOT NULL,
-  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'confirmed', 'preparing', 'ready', 'in_transit', 'delivered', 'cancelled')),
+  eta TEXT,
+  tip DECIMAL(10, 2) NOT NULL DEFAULT 0,
+  dropoff_instructions TEXT,
+  status TEXT NOT NULL DEFAULT 'pending' CONSTRAINT orders_status_check CHECK (status IN ('pending', 'confirmed', 'preparing', 'ready', 'arrived_at_restaurant', 'picked_up', 'arrived_at_customer', 'in_transit', 'delivered', 'cancelled')),
   delivery_address TEXT NOT NULL,
   notes TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -98,6 +101,33 @@ CREATE TABLE IF NOT EXISTS orders (
   FOREIGN KEY (driver_id) REFERENCES drivers(id) ON DELETE SET NULL,
   FOREIGN KEY (restaurant_id) REFERENCES restaurants(id) ON DELETE CASCADE
 );
+
+-- Backward-compatible migrations for databases created before new order fields existed.
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS eta TEXT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS tip DECIMAL(10, 2) NOT NULL DEFAULT 0;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS dropoff_instructions TEXT;
+
+-- Backward-compatible migration: replace the status CHECK constraint to include
+-- new driver delivery statuses (arrived_at_restaurant, picked_up, arrived_at_customer).
+-- The constraint is dropped by scanning pg_constraint so it works regardless of its
+-- auto-generated name on older schemas, then re-added with a stable explicit name.
+DO $$
+DECLARE
+  r RECORD;
+BEGIN
+  FOR r IN
+    SELECT con.conname
+    FROM pg_constraint con
+    WHERE con.conrelid = 'orders'::regclass
+      AND con.contype = 'c'
+      AND pg_get_constraintdef(con.oid) LIKE '%status%'
+  LOOP
+    EXECUTE format('ALTER TABLE orders DROP CONSTRAINT IF EXISTS %I', r.conname);
+  END LOOP;
+END $$;
+
+ALTER TABLE orders ADD CONSTRAINT orders_status_check
+  CHECK (status IN ('pending', 'confirmed', 'preparing', 'ready', 'arrived_at_restaurant', 'picked_up', 'arrived_at_customer', 'in_transit', 'delivered', 'cancelled'));
 
 -- Create restaurant cache table to store fetched restaurants by city/location
 CREATE TABLE IF NOT EXISTS restaurant_cache (

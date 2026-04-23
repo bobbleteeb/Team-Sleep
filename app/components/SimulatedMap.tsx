@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 interface SimulatedMapProps {
   restaurantLocation: { latitude: number; longitude: number };
@@ -55,10 +57,24 @@ export default function SimulatedMap({
   };
 
   return (
-    <div className="relative w-full h-80 bg-slate-50 dark:bg-slate-900 rounded-2xl overflow-hidden border-2 border-orange-100 dark:border-orange-900/20 shadow-inner">
-      {/* Background grid */}
-      <div className="absolute inset-0 opacity-[0.03] dark:opacity-[0.05]" 
-           style={{ backgroundImage: 'radial-gradient(#000 1px, transparent 0)', backgroundSize: '30px 30px' }} />
+    <Card className="overflow-hidden">
+      <CardHeader className="flex-row items-start justify-between gap-3">
+        <div className="space-y-1">
+          <CardTitle className="text-base">Delivery progress</CardTitle>
+          <p className="text-xs text-muted-foreground">Simulated route preview for the demo.</p>
+        </div>
+        <Badge variant="secondary">{Math.round(progress * 100)}% delivered</Badge>
+      </CardHeader>
+      <CardContent className="p-0">
+        <div className="relative w-full h-80 bg-muted/40 dark:bg-muted/20">
+          {/* Background grid */}
+          <div
+            className="absolute inset-0 opacity-[0.03] dark:opacity-[0.05]"
+            style={{
+              backgroundImage: "radial-gradient(#000 1px, transparent 0)",
+              backgroundSize: "30px 30px",
+            }}
+          />
       
       {/* Route Line */}
       <svg className="absolute inset-0 w-full h-full pointer-events-none">
@@ -125,19 +141,8 @@ export default function SimulatedMap({
           </div>
         </div>
       </div>
-
-      {/* Legend & Info */}
-      <div className="absolute top-4 right-4 flex flex-col gap-2">
-        <div className="bg-white/80 dark:bg-slate-800/80 backdrop-blur-md p-3 rounded-xl shadow-sm border border-orange-100 dark:border-orange-900/30 text-[10px] font-bold uppercase tracking-wider space-y-2">
-          <div className="flex items-center gap-2">
-             <div className="w-2 h-2 rounded-full bg-green-500"></div>
-             <span>Driver Active</span>
-          </div>
-          <div className="flex items-center gap-2 text-orange-600 dark:text-orange-400">
-             <span>{Math.round(progress * 100)}% Delivered</span>
-          </div>
-        </div>
-      </div>
     </div>
+      </CardContent>
+    </Card>
   );
 }

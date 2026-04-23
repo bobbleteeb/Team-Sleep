@@ -239,6 +239,28 @@ export default function LoginPage() {
 
               <TabsContent value="signup" className="pt-4">
                 <form onSubmit={handleSubmit} className="space-y-4">
+                  <div className="rounded-lg border bg-background/50 p-3">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+                      Role
+                    </p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Button
+                        type="button"
+                        variant={role === "customer" ? "default" : "outline"}
+                        onClick={() => setRole("customer")}
+                      >
+                        🛒 Customer
+                      </Button>
+                      <Button
+                        type="button"
+                        variant={role === "driver" ? "default" : "outline"}
+                        onClick={() => setRole("driver")}
+                      >
+                        🚗 Driver
+                      </Button>
+                    </div>
+                  </div>
+
                   <div>
                     <label className="block text-sm font-semibold mb-2">Full name</label>
                     <Input
@@ -296,25 +318,9 @@ export default function LoginPage() {
                   </div>
 
                   <div className="pt-1">
-                    <p className="text-sm font-semibold mb-2">I am a:</p>
-                    <div className="grid grid-cols-2 gap-2">
-                      <Button
-                        type="button"
-                        variant={role === "customer" ? "default" : "outline"}
-                        onClick={() => setRole("customer")}
-                        className="justify-between"
-                      >
-                        🛒 Customer
-                      </Button>
-                      <Button
-                        type="button"
-                        variant={role === "driver" ? "default" : "outline"}
-                        onClick={() => setRole("driver")}
-                        className="justify-between"
-                      >
-                        🚗 Driver
-                      </Button>
-                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      You can switch roles above before creating the account.
+                    </p>
                   </div>
 
                   {(error || localError) && (

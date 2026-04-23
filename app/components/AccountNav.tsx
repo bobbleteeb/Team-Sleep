@@ -71,13 +71,6 @@ export function AccountNav({ userName, sidebarView, onSelectView, onClosePanel, 
 
         <div className="space-y-2">
           <Link
-            href="/orders/history"
-            onClick={onClosePanel}
-            className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-sm font-medium hover:bg-muted transition-all"
-          >
-            🧾 Order History
-          </Link>
-          <Link
             href="/rewards"
             onClick={onClosePanel}
             className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-sm font-medium hover:bg-muted transition-all"

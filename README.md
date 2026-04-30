@@ -1,7 +1,7 @@
 # QuickBite: AI-Powered Food Delivery Platform
 
-![Next.js](https://img.shields.io/badge/Next.js-16.1-black?logo=next.js)
-![React](https://img.shields.io/badge/React-19-149eca?logo=react)
+![Next.js](https://img.shields.io/badge/Next.js-16.1.x-black?logo=next.js)
+![React](https://img.shields.io/badge/React-19.2.x-149eca?logo=react)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue?logo=typescript)
 ![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL-3ecf8e?logo=supabase)
 ![OpenAI](https://img.shields.io/badge/OpenAI-Integrated-10a37f?logo=openai)

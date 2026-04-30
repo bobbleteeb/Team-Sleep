@@ -136,7 +136,6 @@ Add required values to `.env.local`:
 
 ```env
 OPENAI_API_KEY=sk-proj-...
-OPENAI_MODEL=gpt-4.1
 
 GOOGLE_MAPS_API_KEY=...
 
@@ -144,6 +143,8 @@ NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=...
 SUPABASE_SERVICE_ROLE_KEY=...
 ```
+
+> **Optional:** `OPENAI_MODEL` defaults to `gpt-4.1` when unset. Override it if you want to use a different model (e.g. `OPENAI_MODEL=gpt-4o`).
 
 ### 3) Initialize database
 

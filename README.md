@@ -19,14 +19,13 @@ Customers order with natural language, discover nearby food with location-aware 
 - Real-time order messaging between customers and drivers
 - Cart, checkout, promo discounts, and order history
 
-## Why It Matters (Recruiter View)
+## Why It Matters 
 
 - End-to-end ownership: product UX, API design, data modeling, and AI integration
 - Practical LLM orchestration: prompt design, JSON action extraction, and safe fallbacks
 - Real-world architecture: dual-role workflows, status transitions, and resilient backend behavior
 - Built with a modern TypeScript stack and production-minded patterns
 
-## AI Usage (Core of the Product)
 
 ### 1) AI Customer Ordering Assistant
 
